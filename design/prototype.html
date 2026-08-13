@@ -1,0 +1,1189 @@
+<title>Suriani POS</title>
+
+<style>
+/* ============================================================
+   SURIANI POS — DESIGN SYSTEM
+   Direction: kopitiam enamelware.
+   Palette drawn from Malaysian enamel tableware and old kedai
+   signage. Monospace for anything countable, because thermal
+   receipts are monospace.
+   ============================================================ */
+
+:root {
+  /* --- brand ------------------------------------------------ */
+  --enamel:      #0B5D48;
+  --enamel-deep: #073B2E;
+  --enamel-lift: #12795E;
+  --sambal:      #DC3B23;
+  --sambal-deep: #A82A16;
+  --tarik:       #D9963A;
+  --pandan:      #3E9E62;
+
+  /* --- ground & neutrals (biased green, never pure grey) ---- */
+  --ink:         #101E19;
+  --paper:       #F6F4EC;
+  --surface:     #FFFFFF;
+  --surface-sunk:#EFEDE3;
+  --line:        #E0DED2;
+  --line-strong: #CBC9BB;
+  --muted:       #6B7169;
+  --muted-soft:  #8C9189;
+
+  /* --- semantic (separate from the accent) ------------------ */
+  --ok:          var(--pandan);
+  --warn:        var(--tarik);
+  --crit:        var(--sambal);
+
+  /* tag foregrounds live as tokens so they never need a
+     theme-scoped override, which is where contrast bugs breed */
+  --tag-hot-fg:   #A82A16;
+  --tag-best-fg:  #8A5B12;
+  --tag-halal-fg: #226B3E;
+
+  /* --- type ------------------------------------------------- */
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  --t-xs:   0.6875rem;
+  --t-sm:   0.8125rem;
+  --t-base: 0.9375rem;
+  --t-md:   1.0625rem;
+  --t-lg:   1.375rem;
+  --t-xl:   1.875rem;
+  --t-2xl:  2.75rem;
+
+  /* --- space, radius, motion -------------------------------- */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px;
+
+  --r-sm: 6px; --r-md: 10px; --r-lg: 16px; --r-xl: 24px; --r-full: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(16,30,25,.08);
+  --shadow-md: 0 4px 16px rgba(16,30,25,.10);
+  --shadow-lg: 0 18px 48px rgba(16,30,25,.18);
+
+  --ease: cubic-bezier(.22,.61,.36,1);
+  --spring: cubic-bezier(.34,1.46,.64,1);
+  --fast: 150ms; --mid: 240ms;
+
+  /* --- POS deliberately commits to one dark look ------------ */
+  --pos-bg:      #0B1512;
+  --pos-panel:   #12211C;
+  --pos-raised:  #1A2E27;
+  --pos-edge:    #234036;
+  --pos-text:    #E8EFEA;
+  --pos-muted:   #7E9188;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink:          #EAEFE9;
+    --paper:        #0C1512;
+    --surface:      #14211C;
+    --surface-sunk: #101B17;
+    --line:         #24352E;
+    --line-strong:  #33473E;
+    --muted:        #93A29A;
+    --muted-soft:   #75857C;
+    --enamel:       #2E9B7B;
+    --enamel-deep:  #1B6C55;
+    --enamel-lift:  #48BE9A;
+    --sambal:       #F0654C;
+    --sambal-deep:  #C33A22;
+    --tarik:        #E8AC57;
+    --pandan:       #56BC7C;
+    --tag-hot-fg:   #F0654C;
+    --tag-best-fg:  #E8AC57;
+    --tag-halal-fg: #56BC7C;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+    --shadow-md: 0 4px 16px rgba(0,0,0,.45);
+    --shadow-lg: 0 18px 48px rgba(0,0,0,.6);
+  }
+}
+
+:root[data-theme="dark"] {
+  --ink:          #EAEFE9;
+  --paper:        #0C1512;
+  --surface:      #14211C;
+  --surface-sunk: #101B17;
+  --line:         #24352E;
+  --line-strong:  #33473E;
+  --muted:        #93A29A;
+  --muted-soft:   #75857C;
+  --enamel:       #2E9B7B;
+  --enamel-deep:  #1B6C55;
+  --enamel-lift:  #48BE9A;
+  --sambal:       #F0654C;
+  --sambal-deep:  #C33A22;
+  --tarik:        #E8AC57;
+  --pandan:       #56BC7C;
+  --tag-hot-fg:   #F0654C;
+  --tag-best-fg:  #E8AC57;
+  --tag-halal-fg: #56BC7C;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-md: 0 4px 16px rgba(0,0,0,.45);
+  --shadow-lg: 0 18px 48px rgba(0,0,0,.6);
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--t-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+:focus-visible { outline: 2px solid var(--sambal); outline-offset: 2px; border-radius: var(--r-sm); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* ============================================================
+   PAGE SHELL
+   ============================================================ */
+.shell { max-width: 1180px; margin: 0 auto; padding: var(--s6) var(--s4) var(--s8); }
+
+.masthead { display: flex; flex-wrap: wrap; gap: var(--s5); align-items: flex-end; justify-content: space-between; margin-bottom: var(--s5); }
+
+.brand-line { display: flex; align-items: center; gap: var(--s3); }
+.brand-mark {
+  width: 44px; height: 44px; flex: none; border-radius: 12px;
+  background: var(--enamel); color: #fff;
+  display: grid; place-items: center;
+  font-family: var(--mono); font-weight: 700; font-size: var(--t-md);
+  box-shadow: inset 0 0 0 3px rgba(255,255,255,.22);
+}
+.brand-name { font-size: var(--t-xl); font-weight: 800; letter-spacing: -.025em; line-height: 1.1; }
+.brand-sub { color: var(--muted); font-size: var(--t-sm); }
+
+.eyebrow {
+  font-size: var(--t-xs); font-weight: 700; letter-spacing: .11em;
+  text-transform: uppercase; color: var(--enamel);
+}
+
+.controls { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+
+.seg { display: inline-flex; background: var(--surface-sunk); border: 1px solid var(--line); border-radius: var(--r-full); padding: 3px; }
+.seg button {
+  padding: 7px 15px; border-radius: var(--r-full); font-size: var(--t-sm); font-weight: 600;
+  color: var(--muted); transition: color var(--fast), background var(--fast);
+}
+.seg button[aria-pressed="true"] { background: var(--enamel); color: #fff; box-shadow: var(--shadow-sm); }
+
+/* ============================================================
+   STAGE + DEVICE FRAMES
+   ============================================================ */
+.stage {
+  background:
+    radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--enamel) 9%, transparent), transparent 70%),
+    var(--surface-sunk);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  padding: var(--s6) var(--s4);
+  display: grid; place-items: center;
+  min-height: 700px;
+}
+
+.device { display: none; }
+.device.is-live { display: block; animation: rise var(--mid) var(--ease) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+
+.phone {
+  width: 372px; max-width: 100%;
+  background: var(--surface);
+  border: 10px solid #1A1A1A;
+  border-radius: 40px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  position: relative;
+  height: 760px;
+  display: flex; flex-direction: column;
+}
+.phone::before {
+  content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 118px; height: 24px; background: #1A1A1A; border-radius: 0 0 14px 14px; z-index: 40;
+}
+
+.tablet {
+  width: 100%; max-width: 1040px;
+  background: var(--pos-bg);
+  border: 12px solid #1A1A1A;
+  border-radius: 22px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  height: 700px;
+  display: flex; flex-direction: column;
+}
+
+.scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+
+/* ============================================================
+   SURFACE A — CUSTOMER MENU
+   ============================================================ */
+.cust-top {
+  padding: 34px var(--s4) var(--s3);
+  background: var(--enamel); color: #fff; flex: none;
+}
+.cust-top-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+.cust-shop { font-weight: 800; font-size: var(--t-md); letter-spacing: -.02em; }
+.cust-table { font-size: var(--t-xs); opacity: .8; letter-spacing: .06em; text-transform: uppercase; }
+
+.lang-swap {
+  display: inline-flex; background: rgba(255,255,255,.16); border-radius: var(--r-full); padding: 2px;
+}
+.lang-swap button { padding: 4px 11px; border-radius: var(--r-full); font-size: var(--t-xs); font-weight: 700; color: rgba(255,255,255,.72); }
+.lang-swap button[aria-pressed="true"] { background: #fff; color: var(--enamel); }
+
+.cat-rail {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; gap: var(--s2); overflow-x: auto; scrollbar-width: none;
+  padding: var(--s3) var(--s4);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.cat-rail::-webkit-scrollbar { display: none; }
+.cat-rail button {
+  flex: none; padding: 7px 14px; border-radius: var(--r-full);
+  font-size: var(--t-sm); font-weight: 600; white-space: nowrap;
+  background: var(--surface-sunk); color: var(--muted); border: 1px solid var(--line);
+  transition: all var(--fast) var(--ease);
+}
+.cat-rail button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+.menu-list { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+
+.dish {
+  display: grid; grid-template-columns: 84px 1fr; gap: var(--s3);
+  padding: var(--s3); border-radius: var(--r-lg);
+  background: var(--surface); border: 1px solid var(--line);
+  text-align: left; width: 100%;
+  transition: transform var(--fast) var(--ease), border-color var(--fast), box-shadow var(--fast);
+}
+.dish:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--enamel); box-shadow: var(--shadow-md); }
+.dish:disabled { opacity: .5; cursor: not-allowed; }
+.dish-art { width: 84px; height: 84px; border-radius: var(--r-md); overflow: hidden; background: var(--surface-sunk); }
+.dish-art svg { display: block; width: 100%; height: 100%; }
+.dish-name { font-weight: 700; letter-spacing: -.015em; line-height: 1.25; }
+.dish-desc { color: var(--muted); font-size: var(--t-sm); margin-top: 2px; line-height: 1.35; }
+.dish-foot { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); flex-wrap: wrap; }
+.dish-price { font-family: var(--mono); font-weight: 700; font-size: var(--t-sm); }
+
+.tag {
+  font-size: var(--t-xs); font-weight: 700; padding: 2px 7px; border-radius: var(--r-sm);
+  letter-spacing: .03em;
+}
+.tag-hot   { background: color-mix(in srgb, var(--sambal) 14%, transparent); color: var(--tag-hot-fg); }
+.tag-best  { background: color-mix(in srgb, var(--tarik) 20%, transparent); color: var(--tag-best-fg); }
+.tag-halal { background: color-mix(in srgb, var(--pandan) 16%, transparent); color: var(--tag-halal-fg); }
+.tag-out   { background: var(--surface-sunk); color: var(--muted); }
+
+/* cart bar */
+.cart-bar {
+  flex: none; padding: var(--s3) var(--s4) var(--s5);
+  background: var(--surface); border-top: 1px solid var(--line);
+  display: flex; gap: var(--s3); align-items: center;
+  transform: translateY(120%); transition: transform var(--mid) var(--spring);
+}
+.cart-bar.is-up { transform: translateY(0); }
+.cart-count {
+  width: 34px; height: 34px; flex: none; border-radius: var(--r-full);
+  background: var(--sambal); color: #fff; display: grid; place-items: center;
+  font-family: var(--mono); font-weight: 700; font-size: var(--t-sm);
+}
+.cart-total { flex: 1; }
+.cart-total small { display: block; color: var(--muted); font-size: var(--t-xs); }
+.cart-total strong { font-family: var(--mono); font-size: var(--t-md); }
+
+.btn {
+  padding: 13px 20px; border-radius: var(--r-full); font-weight: 700; font-size: var(--t-sm);
+  background: var(--enamel); color: #fff; transition: transform var(--fast) var(--ease), background var(--fast);
+}
+.btn:hover { background: var(--enamel-lift); }
+.btn:active { transform: scale(.97); }
+.btn-accent { background: var(--sambal); }
+.btn-accent:hover { background: var(--sambal-deep); }
+.btn-ghost { background: var(--surface-sunk); color: var(--ink); border: 1px solid var(--line); }
+.btn-ghost:hover { background: var(--line); }
+
+/* live order status */
+.status-card {
+  margin: var(--s4); padding: var(--s4); border-radius: var(--r-lg);
+  background: linear-gradient(150deg, var(--enamel-deep), var(--enamel));
+  color: #fff;
+}
+.status-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); }
+.status-head strong { font-size: var(--t-md); letter-spacing: -.02em; }
+.status-eta { font-family: var(--mono); font-size: var(--t-sm); opacity: .85; }
+.track { display: flex; gap: var(--s1); margin: var(--s4) 0 var(--s2); }
+.track span { flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,.24); }
+.track span.done { background: #fff; }
+.track span.now { background: var(--tarik); animation: pulse 1.4s var(--ease) infinite; }
+@keyframes pulse { 50% { opacity: .45; } }
+.track-labels { display: flex; justify-content: space-between; font-size: var(--t-xs); opacity: .82; }
+
+.status-items { margin-top: var(--s4); padding-top: var(--s3); border-top: 1px solid rgba(255,255,255,.2); display: flex; flex-direction: column; gap: 5px; }
+.status-item { display: flex; justify-content: space-between; font-size: var(--t-sm); }
+.status-item span:first-child { opacity: .9; }
+
+.helper { padding: 0 var(--s4) var(--s4); color: var(--muted); font-size: var(--t-sm); }
+
+/* ============================================================
+   SURFACE B — CASHIER POS (single committed dark look)
+   ============================================================ */
+.pos { display: flex; flex-direction: column; height: 100%; color: var(--pos-text); }
+
+.pos-bar {
+  flex: none; display: flex; align-items: center; gap: var(--s4);
+  padding: var(--s3) var(--s4); background: var(--pos-panel);
+  border-bottom: 1px solid var(--pos-edge);
+}
+.pos-title { font-weight: 800; letter-spacing: -.02em; }
+.pos-title small { display: block; font-weight: 500; font-size: var(--t-xs); color: var(--pos-muted); letter-spacing: 0; }
+.pos-health { margin-left: auto; display: flex; gap: var(--s2); flex-wrap: wrap; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border-radius: var(--r-full);
+  font-size: var(--t-xs); font-weight: 700;
+  background: var(--pos-raised); border: 1px solid var(--pos-edge); color: var(--pos-text);
+}
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.dot-ok { background: var(--pandan); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pandan) 25%, transparent); }
+.dot-warn { background: var(--tarik); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tarik) 25%, transparent); }
+
+.pos-body { flex: 1; display: grid; grid-template-columns: 1.35fr 1fr .85fr; min-height: 0; }
+.pos-col { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--pos-edge); }
+.pos-col:last-child { border-right: 0; }
+.pos-col-head {
+  flex: none; padding: var(--s3) var(--s4) var(--s2);
+  font-size: var(--t-xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--pos-muted);
+}
+.pos-scroll { flex: 1; overflow-y: auto; padding: 0 var(--s4) var(--s4); }
+
+/* floor map */
+.floor { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s2); }
+.tbl {
+  aspect-ratio: 1; border-radius: var(--r-md); border: 1.5px solid var(--pos-edge);
+  background: var(--pos-panel); color: var(--pos-muted);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  transition: all var(--fast) var(--ease); position: relative;
+}
+.tbl:hover { transform: translateY(-2px); }
+.tbl-code { font-family: var(--mono); font-weight: 700; font-size: var(--t-md); }
+.tbl-meta { font-size: var(--t-xs); font-family: var(--mono); }
+.tbl[data-state="ordering"] { border-color: #3E7FD6; background: color-mix(in srgb, #3E7FD6 20%, var(--pos-panel)); color: #CFE0F8; }
+.tbl[data-state="eating"]   { border-color: var(--pandan); background: color-mix(in srgb, var(--pandan) 18%, var(--pos-panel)); color: #CDEBD8; }
+.tbl[data-state="bill"]     { border-color: var(--tarik); background: color-mix(in srgb, var(--tarik) 22%, var(--pos-panel)); color: #F6E2C0; }
+.tbl[data-state="bill"]::after {
+  content: ""; position: absolute; inset: -3px; border-radius: var(--r-md);
+  border: 2px solid var(--tarik); animation: ring 1.6s var(--ease) infinite;
+}
+@keyframes ring { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.07); } }
+.tbl.is-new { animation: flash 700ms var(--ease); }
+@keyframes flash { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 35% { box-shadow: 0 0 0 6px color-mix(in srgb, #3E7FD6 45%, transparent); } }
+
+.legend { display: flex; flex-wrap: wrap; gap: var(--s3); padding: var(--s3) 0 0; font-size: var(--t-xs); color: var(--pos-muted); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.swatch { width: 9px; height: 9px; border-radius: 3px; }
+
+/* order feed */
+.ticket {
+  background: var(--pos-panel); border: 1px solid var(--pos-edge);
+  border-radius: var(--r-md); padding: var(--s3); margin-bottom: var(--s2);
+  border-left: 3px solid var(--pandan);
+}
+.ticket.is-new { animation: slide-in 320ms var(--spring); border-left-color: #3E7FD6; }
+@keyframes slide-in { from { opacity: 0; transform: translateX(14px); } }
+.ticket-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s2); }
+.ticket-tbl { font-family: var(--mono); font-weight: 700; }
+.ticket-time { font-family: var(--mono); font-size: var(--t-xs); color: var(--pos-muted); }
+.ticket-lines { margin-top: var(--s2); display: flex; flex-direction: column; gap: 3px; font-size: var(--t-sm); }
+.ticket-line { display: flex; gap: var(--s2); }
+.ticket-qty { font-family: var(--mono); color: var(--tarik); font-weight: 700; min-width: 22px; }
+.ticket-note { color: var(--pos-muted); font-size: var(--t-xs); font-style: italic; }
+.ticket-acts { display: flex; gap: var(--s2); margin-top: var(--s3); }
+.mini {
+  flex: 1; padding: 8px; border-radius: var(--r-sm); font-size: var(--t-xs); font-weight: 700;
+  background: var(--pos-raised); border: 1px solid var(--pos-edge); color: var(--pos-text);
+  transition: background var(--fast);
+}
+.mini:hover { background: var(--pos-edge); }
+.mini-go { background: var(--enamel); border-color: var(--enamel); color: #fff; }
+.mini-go:hover { background: var(--enamel-lift); }
+
+.empty { color: var(--pos-muted); font-size: var(--t-sm); padding: var(--s5) 0; text-align: center; }
+
+/* thermal print preview */
+.printer-slot { padding: 0 var(--s4) var(--s4); }
+.receipt {
+  background: #F4F2EA; color: #16211C;
+  font-family: var(--mono); font-size: 11px; line-height: 1.5;
+  padding: var(--s3); border-radius: 3px;
+  box-shadow: var(--shadow-md);
+  animation: feed 620ms var(--ease);
+  --notch: 5px;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--notch)), 96% 100%, 92% calc(100% - var(--notch)), 88% 100%, 84% calc(100% - var(--notch)), 80% 100%, 76% calc(100% - var(--notch)), 72% 100%, 68% calc(100% - var(--notch)), 64% 100%, 60% calc(100% - var(--notch)), 56% 100%, 52% calc(100% - var(--notch)), 48% 100%, 44% calc(100% - var(--notch)), 40% 100%, 36% calc(100% - var(--notch)), 32% 100%, 28% calc(100% - var(--notch)), 24% 100%, 20% calc(100% - var(--notch)), 16% 100%, 12% calc(100% - var(--notch)), 8% 100%, 4% calc(100% - var(--notch)), 0 100%);
+}
+@keyframes feed { from { transform: translateY(-100%); opacity: 0; } }
+.receipt hr { border: 0; border-top: 1px dashed #16211C; margin: 6px 0; }
+.rc-center { text-align: center; }
+.rc-big { font-size: 15px; font-weight: 700; letter-spacing: .04em; }
+.rc-row { display: flex; gap: 8px; }
+.rc-row span:first-child { min-width: 20px; }
+
+/* ============================================================
+   SURFACE C — OWNER CONSOLE
+   ============================================================ */
+.own-top { padding: 34px var(--s4) var(--s4); background: var(--ink); color: var(--paper); flex: none; }
+.own-greet { font-size: var(--t-sm); opacity: .7; }
+.own-total { font-family: var(--mono); font-size: var(--t-2xl); font-weight: 700; letter-spacing: -.03em; line-height: 1.1; margin-top: 2px; }
+.own-delta { display: inline-flex; align-items: center; gap: 5px; margin-top: var(--s2); font-size: var(--t-sm); font-weight: 600; color: var(--pandan); }
+
+.own-body { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s4); }
+.card-label { font-size: var(--t-xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: var(--s3); }
+
+.branch { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) 0; }
+.branch + .branch { border-top: 1px solid var(--line); }
+.branch-name { flex: 1; font-weight: 600; font-size: var(--t-sm); }
+.branch-name small { display: block; color: var(--muted); font-weight: 400; font-size: var(--t-xs); }
+.branch-val { font-family: var(--mono); font-weight: 700; font-size: var(--t-sm); }
+
+.bars { display: flex; align-items: flex-end; gap: 4px; height: 76px; margin-bottom: var(--s2); }
+.bars i { flex: 1; background: color-mix(in srgb, var(--enamel) 26%, transparent); border-radius: 3px 3px 0 0; transition: background var(--fast); }
+.bars i.peak { background: var(--enamel); }
+.bars-axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: var(--t-xs); color: var(--muted); }
+
+.rank { display: flex; align-items: center; gap: var(--s3); padding: 7px 0; }
+.rank + .rank { border-top: 1px solid var(--line); }
+.rank-n { font-family: var(--mono); font-size: var(--t-xs); color: var(--muted); width: 16px; }
+.rank-name { flex: 1; font-size: var(--t-sm); font-weight: 600; }
+.rank-qty { font-family: var(--mono); font-size: var(--t-sm); }
+
+.alert {
+  display: flex; gap: var(--s3); padding: var(--s3);
+  border-radius: var(--r-md); background: color-mix(in srgb, var(--tarik) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tarik) 34%, transparent);
+  font-size: var(--t-sm);
+}
+.alert b { display: block; }
+.alert-bar { width: 3px; border-radius: 2px; background: var(--tarik); flex: none; }
+
+/* ============================================================
+   NOTES BELOW THE STAGE
+   ============================================================ */
+.notes { margin-top: var(--s6); display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--s4); }
+.note { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s4); }
+.note h3 { margin: 0 0 var(--s2); font-size: var(--t-base); letter-spacing: -.015em; }
+.note p { margin: 0; color: var(--muted); font-size: var(--t-sm); line-height: 1.55; }
+.note code { font-family: var(--mono); font-size: .9em; background: var(--surface-sunk); padding: 1px 5px; border-radius: 4px; color: var(--ink); }
+
+.hint {
+  margin-top: var(--s4); text-align: center; color: var(--muted); font-size: var(--t-sm);
+}
+
+.toast {
+  position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 140%);
+  background: var(--ink); color: var(--paper);
+  padding: 11px 20px; border-radius: var(--r-full);
+  font-size: var(--t-sm); font-weight: 600; z-index: 90;
+  box-shadow: var(--shadow-lg);
+  transition: transform var(--mid) var(--spring);
+}
+.toast.is-up { transform: translate(-50%, 0); }
+
+@media (max-width: 900px) {
+  .pos-body { grid-template-columns: 1fr; }
+  .pos-col { border-right: 0; border-bottom: 1px solid var(--pos-edge); }
+  .tablet { height: auto; max-height: 760px; }
+  .floor { grid-template-columns: repeat(4, 1fr); }
+}
+@media (max-width: 480px) {
+  .shell { padding: var(--s4) var(--s3) var(--s7); }
+  .stage { padding: var(--s4) var(--s2); border-radius: var(--r-lg); }
+  .phone { border-width: 8px; border-radius: 32px; height: 700px; }
+}
+</style>
+
+<div class="shell">
+
+  <header class="masthead">
+    <div>
+      <p class="eyebrow" data-i18n="phase">Fasa 0 · Prototaip reka bentuk</p>
+      <div class="brand-line">
+        <div class="brand-mark">SP</div>
+        <div>
+          <div class="brand-name">Suriani POS</div>
+          <div class="brand-sub" data-i18n="tagline">Pesanan QR, kaunter dan dapur — satu sistem</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Bahasa">
+        <button id="lang-ms" aria-pressed="true">BM</button>
+        <button id="lang-en" aria-pressed="false">EN</button>
+      </div>
+      <div class="seg" role="group" aria-label="Tema">
+        <button id="th-light" aria-pressed="false">☀</button>
+        <button id="th-dark" aria-pressed="false">☾</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="seg" role="group" aria-label="Skrin" style="margin-bottom:var(--s4)">
+    <button data-surface="cust" aria-pressed="true" data-i18n="s_cust">Pelanggan</button>
+    <button data-surface="pos" aria-pressed="false" data-i18n="s_pos">Kaunter</button>
+    <button data-surface="own" aria-pressed="false" data-i18n="s_own">Pemilik</button>
+  </div>
+
+  <div class="stage">
+
+    <!-- ========== A · CUSTOMER ========== -->
+    <div class="device is-live" data-device="cust">
+      <div class="phone">
+        <div class="cust-top">
+          <div class="cust-top-row">
+            <div>
+              <div class="cust-shop">Restoran Suriani</div>
+              <div class="cust-table">Kampung Baru · <span class="num">MEJA 05</span></div>
+            </div>
+            <div class="lang-swap" role="group" aria-label="Language">
+              <button id="clang-ms" aria-pressed="true">BM</button>
+              <button id="clang-en" aria-pressed="false">EN</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="scroll">
+          <div id="statusMount"></div>
+          <nav class="cat-rail" id="catRail"></nav>
+          <div class="menu-list" id="menuList"></div>
+          <p class="helper" data-i18n="helper">Tambah pesanan bila-bila masa sepanjang makan. Bil yang sama.</p>
+        </div>
+
+        <div class="cart-bar" id="cartBar">
+          <div class="cart-count num" id="cartCount">0</div>
+          <div class="cart-total">
+            <small data-i18n="cart_label">Jumlah setakat ini</small>
+            <strong id="cartTotal">RM 0.00</strong>
+          </div>
+          <button class="btn btn-accent" id="placeBtn" data-i18n="place">Hantar Pesanan</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== B · CASHIER POS ========== -->
+    <div class="device" data-device="pos">
+      <div class="tablet">
+        <div class="pos">
+
+          <div class="pos-bar">
+            <div class="pos-title">
+              Suriani POS
+              <small>Kampung Baru · <span data-i18n="shift">Syif petang</span> · Aina</small>
+            </div>
+            <div class="pos-health">
+              <span class="pill"><span class="dot dot-ok"></span><span data-i18n="online">Dalam talian</span></span>
+              <span class="pill"><span class="dot dot-ok"></span><span data-i18n="p_kitchen">Pencetak dapur</span></span>
+              <span class="pill"><span class="dot dot-warn"></span><span data-i18n="p_counter">Kertas kaunter rendah</span></span>
+            </div>
+          </div>
+
+          <div class="pos-body">
+
+            <section class="pos-col">
+              <div class="pos-col-head" data-i18n="floor">Pelan meja</div>
+              <div class="pos-scroll">
+                <div class="floor" id="floor"></div>
+                <div class="legend">
+                  <span><i class="swatch" style="background:var(--pos-edge)"></i><span data-i18n="l_empty">Kosong</span></span>
+                  <span><i class="swatch" style="background:#3E7FD6"></i><span data-i18n="l_order">Memesan</span></span>
+                  <span><i class="swatch" style="background:var(--pandan)"></i><span data-i18n="l_eat">Sedang makan</span></span>
+                  <span><i class="swatch" style="background:var(--tarik)"></i><span data-i18n="l_bill">Minta bil</span></span>
+                </div>
+              </div>
+            </section>
+
+            <section class="pos-col">
+              <div class="pos-col-head" data-i18n="feed">Pesanan masuk</div>
+              <div class="pos-scroll" id="feed"></div>
+            </section>
+
+            <section class="pos-col">
+              <div class="pos-col-head" data-i18n="printed">Cetakan dapur</div>
+              <div class="pos-scroll">
+                <div class="printer-slot" id="printer">
+                  <p class="empty" data-i18n="no_print">Belum ada cetakan.</p>
+                </div>
+              </div>
+            </section>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== C · OWNER ========== -->
+    <div class="device" data-device="own">
+      <div class="phone">
+        <div class="own-top">
+          <div class="own-greet" data-i18n="greet">Selamat petang, Puan Suriani</div>
+          <div class="own-total num" id="ownTotal">RM 3,284.50</div>
+          <div class="own-delta">▲ 12.4% <span data-i18n="vs">berbanding Isnin lepas</span></div>
+        </div>
+
+        <div class="scroll">
+          <div class="own-body">
+
+            <div class="card">
+              <div class="card-label" data-i18n="branches">Dua cawangan</div>
+              <div class="branch">
+                <div class="branch-name">Kampung Baru<small><span class="num" id="kbOrders">142</span> <span data-i18n="orders">pesanan</span></small></div>
+                <div class="branch-val num" id="kbVal">RM 1,932.00</div>
+              </div>
+              <div class="branch">
+                <div class="branch-name">Bangi<small><span class="num">98</span> <span data-i18n="orders">pesanan</span></small></div>
+                <div class="branch-val num">RM 1,352.50</div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-label" data-i18n="byhour">Jualan mengikut jam</div>
+              <div class="bars" id="bars"></div>
+              <div class="bars-axis"><span>8am</span><span>12pm</span><span>4pm</span><span>9pm</span></div>
+            </div>
+
+            <div class="card">
+              <div class="card-label" data-i18n="top">Paling laris hari ini</div>
+              <div id="ranks"></div>
+            </div>
+
+            <div class="alert">
+              <div class="alert-bar"></div>
+              <div>
+                <b data-i18n="a_title">Cendol Pulut habis di Kampung Baru</b>
+                <span data-i18n="a_body">Sudah disembunyikan dari semua meja pada 2:14 ptg.</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="hint" data-i18n="hint">Cuba tambah pesanan di skrin Pelanggan, kemudian tukar ke Kaunter — pesanan itu muncul dan tiket dapur tercetak.</p>
+
+  <div class="notes">
+    <div class="note">
+      <h3 data-i18n="n1t">Satu sistem token</h3>
+      <p data-i18n="n1b">Setiap warna dan saiz teks datang dari satu set token CSS. Menukar jenama restoran lain hanya perlu tukar token — bukan reka semula.</p>
+    </div>
+    <div class="note">
+      <h3 data-i18n="n2t">Wang dalam sen</h3>
+      <p data-i18n="n2b">Semua harga disimpan sebagai integer sen, bukan nombor perpuluhan. Inilah sebab jumlah bil tidak pernah tersasar satu sen.</p>
+    </div>
+    <div class="note">
+      <h3 data-i18n="n3t">Kod QR ialah rahsia</h3>
+      <p data-i18n="n3b">QR meja tidak mengandungi nombor meja. Ia membawa token rawak, supaya tiada sesiapa boleh menghantar pesanan ke meja orang lain.</p>
+    </div>
+    <div class="note">
+      <h3 data-i18n="n4t">Dwibahasa dari awal</h3>
+      <p data-i18n="n4b">Setiap teks datang dari lapisan terjemahan, bukan ditulis terus dalam paparan. Menambah bahasa ketiga kemudian hanya kerja mengisi.</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   i18n — every string comes from here, exactly as the real app
+   will work. Adding a third language later is data entry.
+   ============================================================ */
+const I18N = {
+  ms: {
+    phase: "Fasa 0 · Prototaip reka bentuk",
+    tagline: "Pesanan QR, kaunter dan dapur — satu sistem",
+    s_cust: "Pelanggan", s_pos: "Kaunter", s_own: "Pemilik",
+    cart_label: "Jumlah setakat ini", place: "Hantar Pesanan",
+    helper: "Tambah pesanan bila-bila masa sepanjang makan. Bil yang sama.",
+    shift: "Syif petang", online: "Dalam talian",
+    p_kitchen: "Pencetak dapur", p_counter: "Kertas kaunter rendah",
+    floor: "Pelan meja", feed: "Pesanan masuk", printed: "Cetakan dapur",
+    l_empty: "Kosong", l_order: "Memesan", l_eat: "Sedang makan", l_bill: "Minta bil",
+    no_print: "Belum ada cetakan.",
+    greet: "Selamat petang, Puan Suriani", vs: "berbanding Isnin lepas",
+    branches: "Dua cawangan", orders: "pesanan",
+    byhour: "Jualan mengikut jam", top: "Paling laris hari ini",
+    a_title: "Cendol Pulut habis di Kampung Baru",
+    a_body: "Sudah disembunyikan dari semua meja pada 2:14 ptg.",
+    hint: "Cuba tambah pesanan di skrin Pelanggan, kemudian tukar ke Kaunter — pesanan itu muncul dan tiket dapur tercetak.",
+    n1t: "Satu sistem token",
+    n1b: "Setiap warna dan saiz teks datang dari satu set token CSS. Menukar jenama restoran lain hanya perlu tukar token — bukan reka semula.",
+    n2t: "Wang dalam sen",
+    n2b: "Semua harga disimpan sebagai integer sen, bukan nombor perpuluhan. Inilah sebab jumlah bil tidak pernah tersasar satu sen.",
+    n3t: "Kod QR ialah rahsia",
+    n3b: "QR meja tidak mengandungi nombor meja. Ia membawa token rawak, supaya tiada sesiapa boleh menghantar pesanan ke meja orang lain.",
+    n4t: "Dwibahasa dari awal",
+    n4b: "Setiap teks datang dari lapisan terjemahan, bukan ditulis terus dalam paparan. Menambah bahasa ketiga kemudian hanya kerja mengisi.",
+    t_sent: "Pesanan dihantar ke dapur",
+    t_printed: "Tiket dapur dicetak",
+    t_served: "Ditanda sudah dihidang",
+    st_title: "Pesanan anda", st_eta: "lebih kurang",
+    st_1: "Diterima", st_2: "Sedang dimasak", st_3: "Dihidang",
+    empty_feed: "Tiada pesanan menunggu.",
+    act_print: "Cetak semula", act_serve: "Sudah dihidang",
+    min: "min", sold_out: "Habis",
+    rc_order: "PESANAN", rc_table: "MEJA", rc_time: "MASA"
+  },
+  en: {
+    phase: "Phase 0 · Design prototype",
+    tagline: "QR ordering, counter and kitchen — one system",
+    s_cust: "Customer", s_pos: "Counter", s_own: "Owner",
+    cart_label: "Running total", place: "Send Order",
+    helper: "Add to your order any time during the meal. Same bill.",
+    shift: "Evening shift", online: "Online",
+    p_kitchen: "Kitchen printer", p_counter: "Counter paper low",
+    floor: "Floor plan", feed: "Incoming orders", printed: "Kitchen prints",
+    l_empty: "Empty", l_order: "Ordering", l_eat: "Eating", l_bill: "Bill requested",
+    no_print: "Nothing printed yet.",
+    greet: "Good evening, Puan Suriani", vs: "vs last Monday",
+    branches: "Two branches", orders: "orders",
+    byhour: "Sales by hour", top: "Best sellers today",
+    a_title: "Cendol Pulut sold out at Kampung Baru",
+    a_body: "Hidden from every table at 2:14 pm.",
+    hint: "Add something on the Customer screen, then switch to Counter — the order appears and a kitchen ticket prints.",
+    n1t: "One token system",
+    n1b: "Every colour and text size comes from a single set of CSS tokens. Branding a different restaurant is a token change, not a redesign.",
+    n2t: "Money in cents",
+    n2b: "Every price is stored as an integer number of cents, never a decimal. That is why bill totals never drift by a sen.",
+    n3t: "The QR is a secret",
+    n3b: "A table's QR does not contain its table number. It carries a random token, so nobody can send an order to someone else's table.",
+    n4t: "Bilingual from the start",
+    n4b: "Every string comes from a translation layer rather than being written into the screen. Adding a third language later is data entry.",
+    t_sent: "Order sent to the kitchen",
+    t_printed: "Kitchen ticket printed",
+    t_served: "Marked as served",
+    st_title: "Your order", st_eta: "about",
+    st_1: "Received", st_2: "Cooking", st_3: "Served",
+    empty_feed: "No orders waiting.",
+    act_print: "Reprint", act_serve: "Mark served",
+    min: "min", sold_out: "Sold out",
+    rc_order: "ORDER", rc_table: "TABLE", rc_time: "TIME"
+  }
+};
+
+let lang = "ms";
+const t = k => I18N[lang][k] ?? k;
+
+/* ============================================================
+   Dish art — stylised top-down enamel plates, drawn as SVG so
+   the page carries no external images.
+   ============================================================ */
+function plate(inner, rim) {
+  return `<svg viewBox="0 0 84 84" aria-hidden="true">
+    <rect width="84" height="84" fill="#EFEDE3"/>
+    <circle cx="42" cy="42" r="33" fill="#FCFBF7" stroke="${rim || "#0B5D48"}" stroke-width="3.5"/>
+    ${inner}</svg>`;
+}
+const ART = {
+  nasilemak: plate(`
+    <path d="M42 24c9 0 15 7 15 14s-7 13-15 13-15-6-15-13 6-14 15-14z" fill="#FFFDF4"/>
+    <circle cx="30" cy="52" r="7" fill="#DC3B23"/>
+    <ellipse cx="55" cy="50" rx="8" ry="6" fill="#FFF6D8"/><circle cx="55" cy="50" r="3" fill="#D9963A"/>
+    <path d="M20 42c4-2 8-2 11 0" stroke="#8A6A3A" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M50 26c4 1 7 3 9 6" stroke="#3E9E62" stroke-width="3" fill="none" stroke-linecap="round"/>`),
+  nasigoreng: plate(`
+    <circle cx="42" cy="42" r="22" fill="#E4C489"/>
+    <circle cx="34" cy="36" r="3" fill="#DC3B23"/><circle cx="50" cy="45" r="3" fill="#DC3B23"/>
+    <circle cx="43" cy="52" r="2.6" fill="#3E9E62"/><circle cx="48" cy="33" r="2.6" fill="#3E9E62"/>
+    <circle cx="33" cy="48" r="2.4" fill="#8A6A3A"/>`),
+  meegoreng: plate(`
+    <path d="M24 38c8-5 12 6 20 1s10 6 17 0" stroke="#D9963A" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+    <path d="M23 46c8-5 13 6 20 1s11 6 18 0" stroke="#E0A94F" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+    <path d="M25 54c8-4 12 5 19 1s11 5 17 0" stroke="#C9812C" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+    <circle cx="52" cy="34" r="4" fill="#DC3B23"/><circle cx="31" cy="33" r="3" fill="#3E9E62"/>`),
+  roti: plate(`
+    <circle cx="42" cy="42" r="23" fill="#F2DFB4"/>
+    <path d="M28 38c6 3 10-4 16 0s10-3 14 1" stroke="#D2B173" stroke-width="2.5" fill="none"/>
+    <path d="M26 48c7 3 11-4 17 0s11-3 15 1" stroke="#D2B173" stroke-width="2.5" fill="none"/>
+    <circle cx="42" cy="42" r="8" fill="#F6C846"/>`),
+  ayam: plate(`
+    <path d="M32 30c9-4 20 0 22 10s-6 18-15 17-16-8-14-17c1-5 4-8 7-10z" fill="#C97A2B"/>
+    <path d="M36 36c3-1 7 0 9 3" stroke="#8A4F14" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M40 48c4 1 8 0 10-2" stroke="#8A4F14" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <circle cx="27" cy="54" r="5" fill="#DC3B23"/>`),
+  tehtarik: plate(`
+    <path d="M30 26h24l-3 30H33z" fill="#FCFBF7" stroke="#0B5D48" stroke-width="2.5"/>
+    <path d="M32 34h20l-2 20H34z" fill="#C58A4E"/>
+    <path d="M32 32h20v4H32z" fill="#E8D3B4"/>`, "#0B5D48"),
+  kopi: plate(`
+    <path d="M29 28h26l-4 30H33z" fill="#FCFBF7" stroke="#101E19" stroke-width="2.5"/>
+    <path d="M32 36h20l-3 20H35z" fill="#3B2415"/>
+    <rect x="36" y="20" width="3" height="10" rx="1.5" fill="#8C9189"/>`, "#101E19"),
+  milo: plate(`
+    <path d="M30 28h24l-3 30H33z" fill="#FCFBF7" stroke="#0B5D48" stroke-width="2.5"/>
+    <path d="M32 38h20l-2 18H34z" fill="#5A3418"/>
+    <rect x="34" y="32" width="16" height="6" rx="2" fill="#8A5A2E"/>
+    <rect x="46" y="18" width="3" height="12" rx="1.5" fill="#DC3B23" transform="rotate(12 47 24)"/>`, "#0B5D48"),
+  cendol: plate(`
+    <path d="M30 26h24l-4 32H34z" fill="#FCFBF7" stroke="#0B5D48" stroke-width="2.5"/>
+    <path d="M33 40h18l-2 16H35z" fill="#F0EAD8"/>
+    <rect x="35" y="42" width="4" height="9" rx="2" fill="#3E9E62"/>
+    <rect x="41" y="45" width="4" height="9" rx="2" fill="#3E9E62"/>
+    <rect x="46" y="43" width="4" height="9" rx="2" fill="#3E9E62"/>
+    <path d="M33 36h18l-1 5H34z" fill="#8A5A2E"/>`, "#0B5D48")
+};
+
+/* ============================================================
+   Menu — prices are integer sen, exactly as the database will
+   store them. Never a floating point number.
+   ============================================================ */
+const CATS = [
+  { id: "nasi",   ms: "Nasi",          en: "Rice" },
+  { id: "mee",    ms: "Mee & Roti",    en: "Noodles & Roti" },
+  { id: "minum",  ms: "Minuman",       en: "Drinks" },
+  { id: "manis",  ms: "Pencuci Mulut", en: "Desserts" }
+];
+
+const MENU = [
+  { id:"m1", cat:"nasi",  art:"nasilemak",  sen:1200, prep:12,
+    ms:"Nasi Lemak Ayam Berempah", en:"Nasi Lemak with Spiced Chicken",
+    dms:"Nasi santan, sambal tumis, telur, ikan bilis", den:"Coconut rice, sambal, egg, anchovies",
+    tags:["best","hot","halal"] },
+  { id:"m2", cat:"nasi",  art:"nasigoreng", sen:950, prep:10,
+    ms:"Nasi Goreng Kampung", en:"Kampung Fried Rice",
+    dms:"Ikan bilis, kangkung, cili padi", den:"Anchovies, water spinach, bird's eye chilli",
+    tags:["hot","halal"] },
+  { id:"m3", cat:"mee",   art:"meegoreng",  sen:850, prep:9,
+    ms:"Mee Goreng Mamak", en:"Mamak Fried Noodles",
+    dms:"Mee kuning, tauhu, telur, kobis", den:"Yellow noodles, tofu, egg, cabbage",
+    tags:["best","halal"] },
+  { id:"m4", cat:"mee",   art:"roti",       sen:400, prep:6,
+    ms:"Roti Canai Telur", en:"Roti Canai with Egg",
+    dms:"Dihidang dengan dhal dan sambal", den:"Served with dhal and sambal",
+    tags:["halal"] },
+  { id:"m5", cat:"nasi",  art:"ayam",       sen:750, prep:14,
+    ms:"Ayam Goreng Berempah", en:"Spiced Fried Chicken",
+    dms:"Dua ketul, rempah rumah", den:"Two pieces, house spice blend",
+    tags:["best","halal"] },
+  { id:"m6", cat:"minum", art:"tehtarik",   sen:300, prep:3,
+    ms:"Teh Tarik", en:"Teh Tarik",
+    dms:"Panas atau ais", den:"Hot or iced", tags:["best"] },
+  { id:"m7", cat:"minum", art:"kopi",       sen:320, prep:3,
+    ms:"Kopi O Ais", en:"Iced Black Coffee",
+    dms:"Kopi kaw, gula asing", den:"Strong brew, sugar on the side", tags:[] },
+  { id:"m8", cat:"minum", art:"milo",       sen:400, prep:3,
+    ms:"Milo Ais", en:"Iced Milo",
+    dms:"Dengan serbuk di atas", den:"With powder on top", tags:[] },
+  { id:"m9", cat:"manis", art:"cendol",     sen:650, prep:5,
+    ms:"Cendol Pulut", en:"Cendol with Glutinous Rice",
+    dms:"Gula melaka, santan pekat", den:"Palm sugar, thick coconut milk",
+    tags:[], out:true }
+];
+
+const money = sen => "RM " + (sen / 100).toFixed(2);
+
+/* ============================================================
+   State — one store, three surfaces read from it. Exactly the
+   shape the real app uses: orders are append-only facts.
+   ============================================================ */
+const state = {
+  cat: "nasi",
+  cart: {},          // itemId -> qty
+  orders: [],        // append-only
+  seq: 1841,
+  tables: [
+    { c:"M01", s:"eating",   m:"38m" }, { c:"M02", s:"empty",  m:"" },
+    { c:"M03", s:"bill",     m:"RM 54" }, { c:"M04", s:"eating", m:"12m" },
+    { c:"M05", s:"empty",    m:"" }, { c:"M06", s:"empty",  m:"" },
+    { c:"M07", s:"eating",   m:"25m" }, { c:"M08", s:"ordering", m:"…" },
+    { c:"M09", s:"empty",    m:"" }, { c:"M10", s:"eating", m:"6m" },
+    { c:"M11", s:"empty",    m:"" }, { c:"M12", s:"bill",   m:"RM 31" },
+    { c:"M13", s:"empty",    m:"" }, { c:"M14", s:"eating", m:"44m" },
+    { c:"M15", s:"empty",    m:"" }, { c:"M16", s:"empty",  m:"" }
+  ]
+};
+
+const $  = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+
+/* ---------- customer ---------- */
+function renderCats() {
+  $("#catRail").innerHTML = CATS.map(c =>
+    `<button data-cat="${c.id}" aria-pressed="${c.id === state.cat}">${c[lang]}</button>`
+  ).join("");
+}
+
+function renderMenu() {
+  $("#menuList").innerHTML = MENU.filter(m => m.cat === state.cat).map(m => {
+    const tags = [
+      m.out ? `<span class="tag tag-out">${t("sold_out")}</span>` : "",
+      m.tags.includes("best")  ? `<span class="tag tag-best">${lang === "ms" ? "Paling laris" : "Best seller"}</span>` : "",
+      m.tags.includes("hot")   ? `<span class="tag tag-hot">${lang === "ms" ? "Pedas" : "Spicy"}</span>` : "",
+      m.tags.includes("halal") ? `<span class="tag tag-halal">Halal</span>` : ""
+    ].join("");
+    const q = state.cart[m.id] || 0;
+    return `<button class="dish" data-add="${m.id}" ${m.out ? "disabled" : ""}>
+      <div class="dish-art">${ART[m.art]}</div>
+      <div>
+        <div class="dish-name">${m[lang]}${q ? ` <span class="num" style="color:var(--sambal)">×${q}</span>` : ""}</div>
+        <div class="dish-desc">${lang === "ms" ? m.dms : m.den}</div>
+        <div class="dish-foot">
+          <span class="dish-price">${money(m.sen)}</span>${tags}
+        </div>
+      </div>
+    </button>`;
+  }).join("");
+}
+
+function cartTotals() {
+  let n = 0, sen = 0;
+  for (const [id, q] of Object.entries(state.cart)) {
+    const m = MENU.find(x => x.id === id);
+    n += q; sen += m.sen * q;
+  }
+  return { n, sen };
+}
+
+function renderCart() {
+  const { n, sen } = cartTotals();
+  $("#cartCount").textContent = n;
+  $("#cartTotal").textContent = money(sen);
+  $("#cartBar").classList.toggle("is-up", n > 0);
+}
+
+function renderStatus() {
+  const mount = $("#statusMount");
+  if (!state.orders.length) { mount.innerHTML = ""; return; }
+  const lines = state.orders.flatMap(o => o.lines);
+  const merged = {};
+  lines.forEach(l => { merged[l.id] = (merged[l.id] || 0) + l.q; });
+  const eta = Math.max(...lines.map(l => MENU.find(m => m.id === l.id).prep));
+  const stage = state.orders.some(o => o.status === "served") ? 3
+              : state.orders.some(o => o.status === "printed") ? 2 : 1;
+
+  mount.innerHTML = `<div class="status-card">
+    <div class="status-head">
+      <strong>${t("st_title")}</strong>
+      <span class="status-eta">${t("st_eta")} ${eta} ${t("min")}</span>
+    </div>
+    <div class="track">
+      <span class="${stage >= 1 ? (stage === 1 ? "now" : "done") : ""}"></span>
+      <span class="${stage >= 2 ? (stage === 2 ? "now" : "done") : ""}"></span>
+      <span class="${stage >= 3 ? "done" : ""}"></span>
+    </div>
+    <div class="track-labels"><span>${t("st_1")}</span><span>${t("st_2")}</span><span>${t("st_3")}</span></div>
+    <div class="status-items">
+      ${Object.entries(merged).map(([id, q]) => {
+        const m = MENU.find(x => x.id === id);
+        return `<div class="status-item"><span>${q}× ${m[lang]}</span><span class="num">${money(m.sen * q)}</span></div>`;
+      }).join("")}
+    </div>
+  </div>`;
+}
+
+/* ---------- POS ---------- */
+function renderFloor() {
+  $("#floor").innerHTML = state.tables.map(x =>
+    `<div class="tbl" data-state="${x.s}" data-code="${x.c}">
+      <span class="tbl-code">${x.c}</span>
+      <span class="tbl-meta">${x.m}</span>
+    </div>`
+  ).join("");
+}
+
+function renderFeed() {
+  const open = state.orders.filter(o => o.status !== "served");
+  const el = $("#feed");
+  if (!open.length) { el.innerHTML = `<p class="empty">${t("empty_feed")}</p>`; return; }
+  el.innerHTML = open.map(o => `
+    <article class="ticket ${o.fresh ? "is-new" : ""}" data-order="${o.id}">
+      <div class="ticket-head">
+        <span class="ticket-tbl">${o.table} · #${o.id}</span>
+        <span class="ticket-time">${o.time}</span>
+      </div>
+      <div class="ticket-lines">
+        ${o.lines.map(l => {
+          const m = MENU.find(x => x.id === l.id);
+          return `<div class="ticket-line"><span class="ticket-qty">${l.q}×</span><span>${m[lang]}</span></div>`;
+        }).join("")}
+      </div>
+      <div class="ticket-acts">
+        <button class="mini" data-reprint="${o.id}">${t("act_print")}</button>
+        <button class="mini mini-go" data-serve="${o.id}">${t("act_serve")}</button>
+      </div>
+    </article>`).join("");
+  state.orders.forEach(o => o.fresh = false);
+}
+
+function renderReceipt(o) {
+  $("#printer").innerHTML = `<div class="receipt">
+    <div class="rc-center rc-big">RESTORAN SURIANI</div>
+    <div class="rc-center">Kampung Baru</div>
+    <hr>
+    <div class="rc-row"><span>${t("rc_order")}</span><span>#${o.id}</span></div>
+    <div class="rc-row"><span>${t("rc_table")}</span><span>${o.table}</span></div>
+    <div class="rc-row"><span>${t("rc_time")}</span><span>${o.time}</span></div>
+    <hr>
+    ${o.lines.map(l => {
+      const m = MENU.find(x => x.id === l.id);
+      return `<div class="rc-row"><span>${l.q}x</span><span>${(m.ms).toUpperCase()}</span></div>`;
+    }).join("")}
+    <hr>
+    <div class="rc-center">*** DAPUR ***</div>
+  </div>`;
+}
+
+/* ---------- owner ---------- */
+function renderOwner() {
+  const hours = [8, 14, 22, 41, 68, 92, 74, 46, 33, 29, 52, 78, 61, 38];
+  const peak = Math.max(...hours);
+  $("#bars").innerHTML = hours.map(h =>
+    `<i class="${h === peak ? "peak" : ""}" style="height:${(h / peak) * 100}%"></i>`
+  ).join("");
+
+  const top = [
+    { m: "m1", q: 47 }, { m: "m6", q: 41 }, { m: "m3", q: 36 }, { m: "m4", q: 28 }, { m: "m5", q: 22 }
+  ];
+  $("#ranks").innerHTML = top.map((r, i) => {
+    const m = MENU.find(x => x.id === r.m);
+    return `<div class="rank">
+      <span class="rank-n">${i + 1}</span>
+      <span class="rank-name">${m[lang]}</span>
+      <span class="rank-qty">${r.q}</span>
+    </div>`;
+  }).join("");
+}
+
+/* ---------- shared ---------- */
+function applyI18n() {
+  $$("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = $("#toast");
+  el.textContent = msg;
+  el.classList.add("is-up");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("is-up"), 2200);
+}
+
+function renderAll() {
+  applyI18n();
+  renderCats(); renderMenu(); renderCart(); renderStatus();
+  renderFloor(); renderFeed(); renderOwner();
+}
+
+/* ============================================================
+   Interactions
+   ============================================================ */
+document.addEventListener("click", e => {
+  const add = e.target.closest("[data-add]");
+  if (add) {
+    const id = add.dataset.add;
+    state.cart[id] = (state.cart[id] || 0) + 1;
+    renderMenu(); renderCart();
+    return;
+  }
+
+  const cat = e.target.closest("[data-cat]");
+  if (cat) { state.cat = cat.dataset.cat; renderCats(); renderMenu(); return; }
+
+  const surf = e.target.closest("[data-surface]");
+  if (surf) {
+    $$("[data-surface]").forEach(b => b.setAttribute("aria-pressed", String(b === surf)));
+    $$("[data-device]").forEach(d => d.classList.toggle("is-live", d.dataset.device === surf.dataset.surface));
+    return;
+  }
+
+  const rp = e.target.closest("[data-reprint]");
+  if (rp) {
+    renderReceipt(state.orders.find(o => o.id === Number(rp.dataset.reprint)));
+    toast(t("t_printed"));
+    return;
+  }
+
+  const sv = e.target.closest("[data-serve]");
+  if (sv) {
+    const o = state.orders.find(x => x.id === Number(sv.dataset.serve));
+    o.status = "served";
+    const tb = state.tables.find(x => x.c === o.table);
+    if (tb) { tb.s = "eating"; tb.m = "1m"; }
+    renderFeed(); renderFloor(); renderStatus();
+    toast(t("t_served"));
+    return;
+  }
+});
+
+$("#placeBtn").addEventListener("click", () => {
+  const { n } = cartTotals();
+  if (!n) return;
+
+  const lines = Object.entries(state.cart).map(([id, q]) => ({ id, q }));
+  const now = new Date();
+  const order = {
+    id: ++state.seq,
+    table: "M05",
+    time: String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0"),
+    lines,
+    status: "printed",
+    fresh: true
+  };
+  state.orders.push(order);
+  state.cart = {};
+
+  const tb = state.tables.find(x => x.c === "M05");
+  tb.s = "ordering"; tb.m = "…";
+
+  renderMenu(); renderCart(); renderStatus(); renderFloor(); renderFeed();
+  renderReceipt(order);
+
+  const cell = document.querySelector('[data-code="M05"]');
+  if (cell) { cell.classList.add("is-new"); setTimeout(() => cell.classList.remove("is-new"), 800); }
+
+  toast(t("t_sent"));
+});
+
+/* language */
+function setLang(next) {
+  lang = next;
+  ["#lang-ms", "#clang-ms"].forEach(s => $(s).setAttribute("aria-pressed", String(next === "ms")));
+  ["#lang-en", "#clang-en"].forEach(s => $(s).setAttribute("aria-pressed", String(next === "en")));
+  document.documentElement.lang = next === "ms" ? "ms" : "en";
+  renderAll();
+}
+["#lang-ms", "#clang-ms"].forEach(s => $(s).addEventListener("click", () => setLang("ms")));
+["#lang-en", "#clang-en"].forEach(s => $(s).addEventListener("click", () => setLang("en")));
+
+/* theme */
+function setTheme(mode) {
+  document.documentElement.dataset.theme = mode;
+  $("#th-light").setAttribute("aria-pressed", String(mode === "light"));
+  $("#th-dark").setAttribute("aria-pressed", String(mode === "dark"));
+}
+$("#th-light").addEventListener("click", () => setTheme("light"));
+$("#th-dark").addEventListener("click", () => setTheme("dark"));
+
+renderAll();
+</script>
