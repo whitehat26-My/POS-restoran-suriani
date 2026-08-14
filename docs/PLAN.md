@@ -18,8 +18,9 @@ while it has no revenue, and look good enough that customers notice.
 | Decision | Choice |
 |---|---|
 | Scope | **Multi-tenant from line one**; onboard manually at first, pilot on the 2 branches |
-| Offline strategy | **Android POS app** with local database + direct LAN printing |
-| Hardware | **Bring your own**, against a compatibility list we test and publish |
+| Offline strategy | **Android POS app** with local database, **dual-transport printing (LAN → Bluetooth)**, and an **embedded web server** so phones can order with no internet at all |
+| Distribution | **Direct APK to your own two branches.** Play Store deferred until you onboard restaurants you can't visit |
+| Hardware | **Bring your own**, against a compatibility list we test and publish. Printers must have **both Ethernet and Bluetooth** |
 | Money | **Free during pilot**, then ~RM49–99 per outlet/month; metering built in early |
 | Order/pay flow | Order first, **pay after eating** (open bill per table) |
 | Payment at launch | Static **DuitNow QR + cash**, cashier confirms; gateway later behind an interface |
@@ -85,9 +86,10 @@ while you have no funding.
 ```
 Customer phone (PWA, no install)      Cashier tablet (Android app, offline-capable)
         │                                              │
-        │  order.suriani.my/t/<token>                  │  local SQLite + op log
-        │                                              │        │
-        ▼                                              ▼        │ TCP :9100
+        │  ONLINE:  order.suriani.my/t/<token>         │  local SQLite + op log
+        │  OUTAGE:  http://<tablet-ip>:8080/t/<token> ─┤  embedded HTTP server
+        │           (shop WiFi, plain HTTP, own QR)    │        │
+        ▼                                              ▼        │ TCP :9100, else Bluetooth
 ┌──────────────────────────────────────────────────────┐        ▼
 │  CLOUDFLARE WORKERS  — API + SSR, global edge        │   kitchen printer
 │                                                       │   counter printer + drawer
@@ -107,7 +109,8 @@ Customer phone (PWA, no install)      Cashier tablet (Android app, offline-capab
 
 **Stack:** TypeScript everywhere · React + Vite + Tailwind + in-house component library ·
 Hono on Workers · Drizzle ORM over SQLite (D1 *and* Durable Objects *and* the phone) ·
-Capacitor for the Android POS shell · raw ESC/POS over TCP for printing.
+Capacitor for the Android POS shell · NanoHTTPD for the tablet's embedded server ·
+raw ESC/POS over TCP with a Bluetooth SPP fallback for printing.
 
 ### The one big technical decision: a Durable Object per outlet
 
@@ -174,43 +177,89 @@ The only genuine conflict surface is **menu edits and stock counts**, which are 
 server wins, device is notified. That is the entire conflict model. Small enough to actually get
 right.
 
-**Customer phones stay pure web** — no install, ever. During an outage, customers on the shop WiFi
-can still reach the ordering page; customers on mobile data can't, and the cashier takes their order
-manually. That's an honest, acceptable degradation.
+**Customer phones stay pure web** — no install, ever.
 
-### Distribution: Play Store, App Store, or direct APK?
+### Three different things can break, and they need three different answers
 
-Different answer for each of the three surfaces.
+Lumping these together as "offline" is how POS systems end up half-solving it. They are independent:
 
-**Customer ordering — web only, never an app store.** This is not a close call. Nobody installs an
-app to order nasi lemak. Requiring an install would destroy the single best thing about the product
-(scan → ordering in 10 seconds) and every percent of install friction is a customer who walks. The
-QR opens a web page. Forever.
-
-**Cashier POS — Google Play, yes, but staged:**
-
-| Stage | Distribution | Why |
+| What actually breaks | What stops working | The answer |
 |---|---|---|
-| Phases 5–7 (build) | Direct APK to your 2 branches | The app changes daily; store review would strangle iteration |
-| Phase 8–9 (pilot) | **Play Console closed testing track** | Auto-updates without a public listing — the sweet spot |
-| Phase 10 (selling) | **Play Store production** | Credibility and auto-updates for restaurants you'll never visit |
+| **Internet down**, WiFi fine (fibre cut, ISP outage) | Cloud sync; customer phones on mobile data can't reach the menu | **Tablet serves the menu itself** over the shop WiFi |
+| **Router/WiFi down**, internet fine (usually a power blip) | LAN printing; phone ↔ tablet | **Bluetooth printing fallback** |
+| **Power cut** | Everything | **UPS** on router, tablet charger and printers |
 
-Auto-update is the real reason, not discoverability. You cannot drive to 50 restaurants to
-sideload an APK. Restaurant owners also judge legitimacy by whether you exist in the Play Store.
+The POS itself is unaffected by all three — it already holds its own SQLite and keeps trading.
 
-**Two things to act on now, because they have long lead times:**
+### Answer 1 — the tablet is also a web server
 
-1. **Register the Play developer account as an *organization*, not personal.** Personal accounts
-   created after 13 Nov 2023 cannot ship to production until **12 testers stay opted into closed
-   testing for 14 consecutive days** — and the streak resets if anyone drops out. **Organization
-   accounts are exempt.** You need a registered business and a **D-U-N-S number, which takes
-   ~30 days to obtain**, so start that application in parallel with Phase 0. You need SSM
-   registration for the business anyway.
-2. **Direct APK distribution has a shelf life.** Google now requires developer verification to
-   install Android apps *including sideloading*. It takes effect **September 2026 in Brazil,
-   Indonesia, Singapore and Thailand, going global in 2027**. Malaysia isn't in the first wave, but
-   unverified sideloads will eventually mean a 24-hour wait or ADB — unusable for restaurant staff.
-   Get verified early; it's free and removes the deadline entirely.
+The cashier tablet runs a small embedded HTTP server (NanoHTTPD, foreground service) that serves the
+customer ordering app straight from the APK, backed by the same local database the POS uses. A
+customer on the shop WiFi orders, the order lands in the **same op log** as a counter order, the
+kitchen ticket prints immediately, and it syncs to the cloud whenever the line returns. One store,
+one sync path — the offline ordering path is not a special case.
+
+**It is always on, never outage-triggered.** No mode detection to get wrong, no switchover to fail
+at the worst moment. There are simply two doors and both are always open.
+
+**The constraint you need to accept.** A tablet cannot hold a TLS certificate that phones will trust
+for a local address: Let's Encrypt does not issue for private IPs, and pointing the real domain at
+the tablet produces a certificate error that HSTS makes un-bypassable. So:
+
+- The local path is **plain `http://` to a fixed LAN address** (e.g. `http://192.168.1.50:8080`).
+  Functionally complete — the ordering page needs no camera, geolocation or service worker — but
+  phones show "Not secure" in the address bar.
+- It therefore **needs its own QR**. It cannot reuse the HTTPS one.
+
+**So the table card carries a small outage panel** under the main QR:
+
+```
+   ┌────────────────────────────────┐
+   │        [ QR ]  Scan & pesan     │   ← normal, HTTPS, cloud
+   │                                 │
+   │  Tiada internet? / No internet? │
+   │   [qr] Sambung WiFi             │   ← standard WIFI: join code
+   │   [qr] Pesan di sini            │   ← http:// to the tablet
+   └────────────────────────────────┘
+```
+
+If the shop's guest WiFi is left open (no password), the join step collapses to one tap and the
+panel needs only one small QR.
+
+**Locking it down matters.** The local server sits on a network customers share, so it exposes
+*only* menu-read and order-create against a valid table token — no POS routes, no sales figures, no
+staff auth surface at all, bound to the WLAN interface and rate-limited per IP. It is a separate
+router from the POS API, not the same one with a flag.
+
+**Android specifics:** foreground service with a persistent notification (Android 14 requires a
+declared `foregroundServiceType`), `WifiLock` so the radio doesn't sleep, port 8080 since Android
+can't bind below 1024, and a **DHCP reservation** so the tablet's IP never moves — a step in the
+setup wizard, alongside the printers.
+
+### Answer 2 — Bluetooth printing fallback
+
+The print worker is transport-agnostic. Each job tries **TCP `:9100` with a ~1.5s timeout, then
+falls back to Bluetooth SPP**, and only then queues with a visible POS alert. When the router dies,
+the tablet talks straight to the printer with no network in between.
+
+**This changes the hardware list: certified printers must have both Ethernet and Bluetooth.**
+Android 12+ also needs the `BLUETOOTH_CONNECT` runtime permission.
+
+### Distribution
+
+**Customer ordering — web only, never an app store.** Not a close call. Nobody installs an app to
+order nasi lemak, and every percent of install friction is a customer who walks.
+
+**Cashier POS — direct APK to your own two branches.** No Google account, no review queue, no
+waiting, and you can iterate daily. You physically control both tablets, which is exactly the
+situation where sideloading is the right answer.
+
+Revisit distribution only when onboarding restaurants you *can't* visit — at that point the driver
+is automatic updates, not discoverability, and the Play Console closed-testing track is the next
+step rather than a public listing. Two things will matter then, neither urgent now: a Play developer
+account registered as an **organization** skips the 12-testers-for-14-days rule that personal
+accounts face (needs SSM + a D-U-N-S number, ~30 days), and Google's **developer verification for
+sideloaded apps** reaches Malaysia in the 2027 global rollout. Worth knowing, not worth doing yet.
 
 **Apple App Store — skip it, at least until a customer pays you to care.**
 
@@ -235,19 +284,30 @@ Restaurants buy their own. You certify and publish what works. No inventory, no 
 
 | Part | Requirement | Certify these |
 |---|---|---|
-| Cashier tablet | Android 11+, 10–11", 4 GB RAM | Galaxy Tab A9+, Lenovo Tab M11, Redmi Pad SE |
-| Kitchen printer | 80 mm, **Ethernet**, ESC/POS, port 9100, auto-cutter | Epson TM-T82X, Epson TM-m30III, Xprinter XP-N160II, Rongta RP80 |
+| Cashier tablet | Android 12+, 10–11", 4 GB RAM, kept on mains | Galaxy Tab A9+, Lenovo Tab M11, Redmi Pad SE |
+| Kitchen printer | 80 mm, **Ethernet _and_ Bluetooth**, ESC/POS, port 9100, auto-cutter | Epson TM-m30III, Xprinter XP-N160II BT, Rongta RP80 (BT variant) |
 | Counter printer | Same + RJ11 drawer kick | as above |
 | Cash drawer | RJ11, printer-kicked | any |
-| Router | Must support DHCP reservation; two SSIDs | TP-Link Archer AX23, Deco |
+| Router | **DHCP reservation** support; two SSIDs | TP-Link Archer AX23, Deco |
 | UPS | 650 VA+ | any |
 | QR stands | A6/A7 acrylic, one per table | any |
+| *Recommended* | 4G failover router / USB modem + prepaid SIM (~RM200) | keeps **cloud** sync alive through a fibre cut |
 
 **A typical restaurant spends roughly RM2,000–3,000** — and you never touch a purchase order.
 
-Setup notes that go in the customer runbook: **static IPs (DHCP reservations) for both printers**
-— printers that move IP are the classic "why did printing stop" call — and printers on **Ethernet,
-never Bluetooth**.
+**Dual-transport printers are now a hard requirement**, not a preference: Ethernet is the fast path,
+Bluetooth is what keeps the kitchen printing when the router dies. A LAN-only printer fails the
+second failure mode entirely.
+
+4G failover is listed as recommended rather than required because the tablet already keeps the shop
+trading without it. What it buys is *cloud* continuity — the owner dashboard and multi-branch
+reporting stay live during a fibre cut instead of going stale until the line returns. RM200 for that
+is cheap.
+
+Setup steps that go in the runbook, because each one prevents a specific support call: **DHCP
+reservations for both printers and the tablet** (anything that moves IP breaks silently), printers
+**pre-paired over Bluetooth during install** rather than in a panic later, and the guest SSID kept
+separate from the POS SSID.
 
 ---
 
@@ -379,16 +439,18 @@ no change to ordering) · printer driver behind an interface (KDS later) · **LH
 | 2 | Customer QR ordering PWA, multi-tenant routed | Order from a phone lands in the right outlet's DO |
 | 3 | Web POS — floor map, live orders over DO WebSockets | Phone order on the till in under 1s |
 | 4 | Print pipeline — job queue, ESC/POS templates, retry | Real ticket prints in a real kitchen |
-| 5 | **Android POS shell** — local SQLite, op-log sync, LAN printing; direct APK | **Internet unplugged: orders taken, tickets printed, clean resync** |
+| 5 | **Android POS shell** — local SQLite, op-log sync, **dual-transport printing (LAN → Bluetooth)**; direct APK | **Router unplugged: kitchen still prints over Bluetooth** |
+| 5b | **Tablet local web server** — embedded HTTP, customer menu served from the APK, hardened public-only routes, outage QR panel on table cards | **Internet unplugged: a phone on shop WiFi orders and the ticket prints** |
 | 6 | Payments — DuitNow QR, cash, receipts, drawer, shift close | A full bill settles and closes |
 | 7 | Owner console — multi-branch reporting, master menu, Telegram report | Owner reads both branches on her phone |
 | 8 | **Pilot: both Suriani branches, real service, real money** | Two weeks of live service without a manual workaround |
-| 9 | Productisation — setup wizard, compatibility list, runbook in BM, metering, PDPA docs; **Play Store closed testing** | A stranger can self-onboard without you |
-| 10 | First external restaurants; **Play Store production** | Three paying outlets you don't own |
+| 9 | Productisation — setup wizard, compatibility list, runbook in BM, metering, PDPA docs | A stranger can self-onboard without you |
+| 10 | First external restaurants | Three paying outlets you don't own |
 
-**Start immediately, in parallel — these have ~30-day lead times and will otherwise block Phase 9:**
-SSM business registration → **D-U-N-S number** → **Play Console organization account** → Android
-developer verification. None of it depends on any code being written.
+**Not urgent, but has a ~30-day lead time when you do want it:** SSM registration → D-U-N-S number
+→ Play Console *organization* account. Only needed once you distribute to restaurants you can't
+physically visit; the pilot runs on direct APK. Worth starting SSM early anyway, since the business
+entity is needed for payment gateways and PDPA terms regardless.
 
 **Ship discipline:** soft-launch each restaurant on 2–3 tables during a quiet afternoon with paper
 as backup, before rolling out the full floor.
@@ -401,15 +463,19 @@ as backup, before rolling out the full floor.
 |---|---|
 | **Cross-tenant data leak** — fatal to trust | Structural isolation via DO-per-outlet + automated isolation tests in CI |
 | **One bad deploy breaks every restaurant at once** | Staged rollout, feature flags, and the offline app means a cloud outage *degrades* rather than kills service |
-| Restaurant's internet dies | Android POS keeps trading and printing; syncs on return |
+| Restaurant's internet dies | POS keeps trading; tablet serves the menu to phones on shop WiFi; syncs on return |
+| Router/WiFi dies | Print jobs fall back to Bluetooth automatically; POS unaffected |
+| **Local server sits on a network customers share** | Separate public-only route table — menu read and order create against a valid table token, nothing else. No POS route, no sales figure, no staff auth exists on that server. Bound to the WLAN interface, rate-limited per IP |
+| Android kills the local server in the background | Foreground service + persistent notification + `WifiLock`; tablet stays on mains power |
+| Customers unsettled by the "Not secure" warning on the outage QR | Panel is explicitly labelled as the no-internet path and only used during an outage; wording tested during the pilot |
+| Tablet or printer IP moves and printing dies silently | DHCP reservations for all three, verified by the setup wizard's test print |
 | Supporting shops you can't visit | Device health telemetry, remote diagnostics, in-app support, plain-BM runbook with photos |
 | Every restaurant's WiFi is different | Idiot-proof setup wizard: scan for printer → test print → save |
 | Free-tier ceiling hit mid-service | Usage alerts at 70%; $5/mo upgrade is instant and pre-authorised |
 | Printer jams / out of paper | Retry with backoff, visible POS alert, one-tap reprint |
 | Prank orders to another table | Unguessable per-table token + rate limiting + void with reason |
 | Elderly customers won't use phones | Cashier can enter any order manually — QR is an option, never the only path |
-| **Play Store production blocked at launch** | Register as an **organization** account (exempt from the 12-tester/14-day rule); start SSM + D-U-N-S on day one |
-| Android sideload verification tightening (global 2027) | Complete developer verification early — free, and removes the deadline |
+| Play Store needed later than expected | Not on the critical path — pilot ships as direct APK. SSM → D-U-N-S → organization account has a ~30-day lead time; start it before onboarding restaurants you can't visit |
 | Solo maintainer (bus factor) | Runbook, infrastructure as code, boring well-documented choices |
 
 ---
@@ -423,9 +489,16 @@ Every phase demonstrated end-to-end, not just unit-tested:
 2. **Ordering** — real QR, real phone → correct outlet, correct table, correct price snapshot.
 3. **Realtime** — order placed on a phone appears on the till in under 1s, no refresh.
 4. **Printing** — physically correct kitchen docket: table, items, quantities, notes, time, clean cut.
-5. **Offline drill** *(mandatory before any restaurant goes live)* — unplug the internet mid-service.
-   Orders must be taken, kitchen tickets must print, bills must close. Reconnect: everything
-   reconciles with **no duplicates and no losses**.
+5. **Three outage drills, all mandatory before any restaurant goes live.** Each breaks a different
+   thing, so passing one proves nothing about the others:
+   - **Internet drill** — unplug the fibre mid-service. The POS keeps taking orders and closing
+     bills, and a customer phone on the shop WiFi must still order via the outage QR and get a
+     printed ticket. Reconnect: everything reconciles with **no duplicates and no losses**,
+     including the orders placed through the tablet's own server.
+   - **Router drill** — kill the router with the internet up. Kitchen tickets must still print,
+     automatically, over Bluetooth, with no one touching a setting.
+   - **Power drill** — pull the plug. On restore the tablet boots, the foreground service restarts,
+     the local server comes back, and the database passes an integrity check with no lost orders.
 6. **Payment** — settle by cash → drawer kicks, receipt prints, session closes, totals match.
 7. **86-ing** — mark an item unavailable → it disappears from a phone already on the menu page.
 8. **Load** — 25 tables ordering within 2 minutes: no dropped orders, no duplicate prints.
@@ -435,11 +508,130 @@ Every phase demonstrated end-to-end, not just unit-tested:
 
 ---
 
-## Immediate next step
+## 12. Phase 0 — delivered
 
-**Phase 0** — the design system and a fully clickable prototype of all three surfaces (customer menu,
-cashier POS, owner console) in BM and English, openable on your phone. Nothing gets built for real
-until you look at it and say yes.
+Shipped on `claude/restaurant-pos-system-ng3obi`, open as **PR #1**.
+
+- `design/tokens.css` — the token system (kopitiam enamelware), light and dark.
+- `design/prototype.html` — clickable prototype of all three surfaces, linked by shared state:
+  ordering on the customer phone updates the POS floor map and prints a kitchen ticket. BM/EN
+  toggle swaps every string through a translation layer.
+- `docs/PLAN.md`, `README.md`.
+
+Verified with Playwright: order loop end to end, language swap, both themes, no console errors.
+Design feedback can land at any time — it does not conflict with Phase 1, which is backend only.
+
+---
+
+## 13. Phase 1 — build plan
+
+**Goal:** two outlets exist, each with its own data, and *provably* cannot see each other.
+No UI, no WebSockets, no printing, no payments — those are Phases 2–6. Ends deployed to a free
+`*.workers.dev` URL (Cloudflare account exists; custom domain comes later without code changes).
+
+### Repository layout
+
+pnpm workspaces from the start — `apps/pos` and `apps/menu` arrive in Phases 2–3 and moving a
+single-package repo later is needless churn.
+
+```
+apps/api/
+  src/
+    index.ts              Worker entry, Hono app, route mounting
+    lib/tenant.ts         THE ONLY DOOR to an outlet's data  ← see below
+    lib/money.ts          integer-sen helpers, no floats anywhere
+    lib/ids.ts            ULIDs, and unguessable qr_token generation
+    auth/session.ts       signed cookie sessions (WebCrypto HMAC)
+    auth/pin.ts           staff PIN hashing (PBKDF2 via WebCrypto)
+    control/schema.ts     Drizzle schema for D1 (orgs, users, outlets, devices…)
+    outlet/OutletDO.ts    the Durable Object — one per outlet
+    outlet/schema.ts      Drizzle schema for the DO's own SQLite
+    outlet/migrations.ts  versioned migration runner
+  migrations/             D1 SQL migrations (wrangler d1 migrations)
+  test/                   isolation · migrations · money · auth
+  wrangler.toml
+.github/workflows/ci.yml  typecheck · lint · test  (blocking)
+```
+
+`design/` and `docs/` stay where they are.
+
+### The tenant door
+
+Every path to outlet data goes through one function in `src/lib/tenant.ts`:
+
+```
+getOutletStub(env, session, outletId)
+  1. look the outlet up in D1
+  2. assert outlet.org_id === session.org_id   → otherwise 404, never 403
+  3. return env.OUTLET.get(env.OUTLET.idFromName(outlet.do_id))
+```
+
+Three details that make this hold:
+
+- **404, not 403.** A 403 confirms the outlet exists. Never leak the existence of another
+  tenant's data.
+- **`do_id` is a random string stored in D1**, not the outlet id. Guessing an outlet id gets you
+  nowhere near the Durable Object.
+- **No other file may call `env.OUTLET.get`.** Enforced by an ESLint `no-restricted-syntax` rule
+  *and* by a source-level test that greps the tree — the cheap check that actually catches the
+  regression a year from now.
+
+### Durable Object per outlet
+
+- Declared with `new_sqlite_classes` in `wrangler.toml`. **Required** — the Workers Free plan only
+  supports Durable Objects with the SQLite storage backend.
+- Drizzle via `drizzle-orm/durable-sqlite`; D1 via `drizzle-orm/d1`. One ORM, one schema language,
+  three SQLite targets (D1, the DO, and the phone in Phase 5).
+- Migrations run in the constructor inside `blockConcurrencyWhile`, keyed on `user_version`, so a
+  sleeping outlet migrates itself the moment it next wakes. No fleet-wide migration job.
+- Full schema lands now — including `payments`, `print_jobs`, `op_log` — even though Phases 4–6
+  fill them. Adding empty tables is free; churning migrations across live outlets is not.
+
+### Auth
+
+Staff PIN on a trusted device: PBKDF2 hashing and HMAC-signed session cookies, both via WebCrypto
+(Workers has no bcrypt). Roughly 100 lines, fully auditable.
+
+Deliberately **not** pulling in Better Auth yet — Phase 1 has no self-serve signup, only seeded
+staff. Adopt it at Phase 9 when onboarding strangers defines the real requirements.
+
+### Seed
+
+`pnpm seed` creates Restoran Suriani with **Kampung Baru and Bangi**, the nine menu items from the
+prototype, and 16 tables per outlet with random `qr_token`s. Two real branches from day one, and
+Phase 2 has something to render.
+
+### Files to create
+
+`apps/api/src/lib/tenant.ts` · `apps/api/src/outlet/OutletDO.ts` · `apps/api/src/outlet/migrations.ts`
+· `apps/api/src/control/schema.ts` · `apps/api/src/auth/session.ts` · `apps/api/wrangler.toml` ·
+`apps/api/test/isolation.test.ts` · `.github/workflows/ci.yml` · `pnpm-workspace.yaml`
+
+### Verification
+
+Tests run in **`@cloudflare/vitest-pool-workers`** — inside the real workerd runtime with real D1
+and real Durable Objects. Mocked tenant isolation would prove nothing.
+
+1. **`isolation.test.ts` — the blocking gate.** Seed org A/outlet A1 and org B/outlet B1, place an
+   order in each, then assert: A's session reading B1 returns **404**; a cookie with a swapped
+   `org_id` fails signature; a guessed outlet id never resolves to a DO; and no file outside
+   `lib/tenant.ts` calls `env.OUTLET.get`.
+2. **`migrations.test.ts`** — migrations advance `user_version`, and re-running is idempotent.
+3. **`money.test.ts`** — totals, modifiers and rounding in integer sen; a property test asserting
+   no float ever enters a total.
+4. **Manual** — `pnpm dev`, create an order in each outlet over HTTP, confirm separation by
+   inspecting each DO.
+5. **Deploy** — `wrangler deploy`, hit the `*.workers.dev` URL, then
+   `wrangler d1 execute --remote` to confirm the control-plane rows landed.
+
+### Your setup checklist (needed only at the deploy step)
+
+1. Create a Cloudflare API token (Workers Scripts: Edit, D1: Edit) → save as `CLOUDFLARE_API_TOKEN`.
+2. Confirm the account has **no key-value-backed Durable Object namespace** — its presence blocks
+   the free SQLite-backed tier.
+3. Buy the domain whenever you like. Not needed for Phase 1.
+
+Everything before the deploy step runs locally with no account.
 
 ---
 

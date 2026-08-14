@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: typecheck · lint · test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # The tenant door: env.OUTLET.get may appear in exactly one file.
+      # Runs first and on its own, because a cross-tenant leak is the one
+      # failure this product cannot ship, and the message should not be buried
+      # under unrelated test output.
+      - name: Guard tenant isolation boundary
+        run: pnpm --filter @suriani/api guard
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      # Runs inside the real workerd runtime with real D1 and Durable Objects.
+      - name: Test
+        run: pnpm test

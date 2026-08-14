@@ -1,0 +1,43 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "suriani-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Control plane: organisations, users, outlets, devices, usage rollups.
+  // Create with:  pnpm wrangler d1 create suriani-control
+  // then paste the returned id over the placeholder below.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "suriani-control",
+      "database_id": "REPLACE_ME_RUN_WRANGLER_D1_CREATE",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Data plane: one Durable Object per outlet, each with its own SQLite.
+  "durable_objects": {
+    "bindings": [{ "name": "OUTLET", "class_name": "OutletDO" }]
+  },
+
+  // new_sqlite_classes, NOT new_classes. The Workers Free plan only supports
+  // Durable Objects with the SQLite storage backend; a key-value backed class
+  // would put this on the paid plan.
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["OutletDO"]
+    }
+  ],
+
+  // Dev and test only. Production overrides this with:
+  //   pnpm wrangler secret put SESSION_SECRET
+  // Never commit a real secret here.
+  "vars": {
+    "SESSION_SECRET": "dev-only-insecure-session-secret"
+  },
+
+  "observability": { "enabled": true }
+}
