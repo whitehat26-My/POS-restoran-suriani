@@ -128,6 +128,43 @@ export const MIGRATIONS: Migration[] = [
       )`,
     ],
   },
+  {
+    // Configurable tables: a restaurant's floor is its own, not whatever the
+    // seed script invented.
+    //
+    // This is the first migration that upgrades outlets already holding live
+    // data, so every statement here is additive. ALTER TABLE ADD COLUMN with a
+    // constant default is the only shape SQLite applies without rewriting the
+    // table, which is what keeps existing rows intact.
+    version: 2,
+    statements: [
+      `CREATE TABLE zones (
+        id TEXT PRIMARY KEY,
+        name_ms TEXT NOT NULL,
+        name_en TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )`,
+      `ALTER TABLE tables ADD COLUMN zone_id TEXT`,
+      `ALTER TABLE tables ADD COLUMN capacity INTEGER`,
+      `ALTER TABLE tables ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`,
+      // Soft delete. table_sessions.table_id points at these rows, so a real
+      // DELETE would turn "Meja 05" into "?" in every historical bill.
+      `ALTER TABLE tables ADD COLUMN archived_at INTEGER`,
+      `ALTER TABLE tables ADD COLUMN token_rotated_at INTEGER`,
+      `CREATE INDEX idx_tables_archived ON tables (archived_at)`,
+      // Single-row outlet configuration. The guest WiFi details and the local
+      // ordering URL are what the printed outage panel needs; until Phase 5b
+      // sets them, the panel is simply omitted from the card.
+      `CREATE TABLE settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        wifi_ssid TEXT,
+        wifi_password TEXT,
+        local_order_url TEXT,
+        updated_at INTEGER NOT NULL DEFAULT 0
+      )`,
+      `INSERT INTO settings (id, updated_at) VALUES (1, 0)`,
+    ],
+  },
 ];
 
 /** Highest version this build knows how to migrate to. */

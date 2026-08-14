@@ -523,7 +523,33 @@ Design feedback can land at any time — it does not conflict with Phase 1, whic
 
 ---
 
-## 13. Phase 1 — build plan
+## 13. Phase 1 — delivered ✅
+
+Pushed to PR #1. **CI green on its first run**: tenant guard, typecheck, lint, and **24 tests**
+inside the real workerd runtime with real D1 and real Durable Objects.
+
+The gate is met — two outlets exist and their data is provably separate, proven through the real
+onboarding path rather than a test-only shortcut.
+
+What shipped beyond the plan below, and why:
+
+- **Ordering failures return values instead of throwing.** An unknown table token is the most common
+  request this system will ever reject (stale printed QRs, bots probing). Throwing across the
+  Durable Object RPC boundary logged every one as an uncaught exception, which would bury real
+  faults in noise.
+- **Both tenant-door guards were verified to actually fire** by planting a violation. A guard nobody
+  has seen fail is not a guard.
+- **The onboarding endpoint fails closed** — without `ADMIN_SEED_TOKEN` it answers 404, so it cannot
+  sit unguarded in a deployment where nobody set the secret.
+- **Login is indistinguishable between an unknown phone and a wrong PIN**, asserted by a test
+  comparing the two response bodies.
+- **TypeScript pinned to 6.x** — typescript-eslint 8 does not support the TS 7 (Go port) API yet.
+
+Original plan follows.
+
+---
+
+## 13b. Phase 1 — build plan (as executed)
 
 **Goal:** two outlets exist, each with its own data, and *provably* cannot see each other.
 No UI, no WebSockets, no printing, no payments — those are Phases 2–6. Ends deployed to a free
@@ -632,6 +658,167 @@ and real Durable Objects. Mocked tenant isolation would prove nothing.
 3. Buy the domain whenever you like. Not needed for Phase 1.
 
 Everything before the deploy step runs locally with no account.
+
+---
+
+## 14. Phase 2a — configurable tables
+
+**Goal:** a restaurant's tables are its own, not whatever the seed script invented. Add, rename,
+group, archive; regenerate a compromised QR; print the cards.
+
+This comes before the customer app because tables are what QR codes point at. Everything downstream
+— the printed cards, the POS floor map, the pilot itself — depends on them being real.
+
+### Schema (outlet DO, migration v2)
+
+```
+zones          id, name_ms, name_en, sort_order
+tables         + zone_id, capacity, sort_order,
+               + archived_at        ← soft delete, never DELETE
+               + token_rotated_at
+settings       single-row outlet config: guest WiFi SSID/password,
+               local ordering URL (used by the printed outage panel)
+```
+
+**Archive, never delete.** `table_sessions.table_id` points at these rows, so a real `DELETE` would
+orphan every historical bill that table ever had — "Meja 05" becomes "?" in last month's reports.
+Archived tables stay queryable for history and disappear only from active listings.
+
+This is also the **first real exercise of the per-outlet migration runner** — until now it has only
+ever built a schema from scratch. A test must confirm v2 applies to an outlet that already holds v1
+data *and that the data survives*.
+
+### API — role-gated to owner and manager
+
+```
+GET    /api/outlets/:id/tables                    list (active, or ?includeArchived)
+POST   /api/outlets/:id/tables                    create one
+POST   /api/outlets/:id/tables/bulk               "Meja 01–12" in one call
+PATCH  /api/outlets/:id/tables/:tableId           label, zone, capacity, order
+POST   /api/outlets/:id/tables/:tableId/rotate    new QR secret  (requires confirm: true)
+DELETE /api/outlets/:id/tables/:tableId           soft archive
+GET    /api/outlets/:id/zones  + POST/PATCH/DELETE
+GET    /api/outlets/:id/tables/cards              printable QR cards (HTML)
+```
+
+**Two different kinds of "no", and they must not be merged:**
+
+| Situation | Answer | Why |
+|---|---|---|
+| Another org's outlet | **404** | You may not know it exists |
+| Cashier editing tables in *their own* outlet | **403** | Legitimately here, just not permitted |
+
+Using 404 for both would hide permission bugs behind a plausible-looking response; using 403 for
+both would leak the customer list. Add a `requireRole()` helper alongside the existing session
+middleware in `apps/api/src/index.ts`.
+
+### Rules that prevent real damage
+
+1. **Cannot archive a table with an open bill** → 409 with a message naming the open session.
+2. **Rotating a QR instantly kills the printed card.** Requires an explicit `confirm: true`, and is
+   written to `audit_log` with who did it. The old token must 404 immediately.
+3. **Labels are unique among active tables** in an outlet. Two "Meja 05" is a service disaster, and
+   bulk-create must refuse to collide with existing labels rather than silently skipping.
+4. Archiving is reversible; restoring re-checks the label collision rule.
+
+### Printable QR cards
+
+`GET /api/outlets/:id/tables/cards` renders a print-ready HTML page — one card per table, styled
+with `design/tokens.css`, `@page` sized for the acrylic stands, `page-break-after` between cards.
+The owner opens it and presses Print.
+
+Each card carries the restaurant name, the table label, and the ordering QR. The **"Tiada internet?"
+outage panel is rendered only when the outlet has a local ordering URL configured** — which it will
+not until Phase 5b. Until then the card is still complete and correct; the panel appears
+automatically once offline mode exists, with no redesign.
+
+QR encoding needs a pure-JS library that runs in Workers (no canvas, no native deps) emitting SVG.
+
+### Verification
+
+1. **Migration upgrade** — an outlet with v1 data and real orders migrates to v2 with every row
+   intact. This is the test that matters most; it is the first upgrade the runner has ever done.
+2. **Role gate** — a cashier session gets **403** on every table mutation, while owner and manager
+   succeed. A different-org session gets **404** on the same routes.
+3. **Open bill** — archiving a table mid-service is refused with 409.
+4. **Rotation** — after rotating, the old token 404s and the new one serves the menu, in the same test.
+5. **Collisions** — duplicate labels rejected on both single and bulk create.
+6. **History survives archiving** — archive a table that has orders, then confirm past orders still
+   report "Meja 05" rather than "?".
+7. **Cards** — the printed page contains one card per active table and none for archived ones, and
+   the encoded QR payload string matches that table's real ordering URL.
+
+---
+
+## 15. Phase 2b — customer QR ordering app
+
+**Goal:** the customer surface becomes real. Someone scans the QR on a table, orders from their own
+phone, and it lands in that outlet's Durable Object and nowhere else.
+
+Phase 0 designed this screen and Phase 1 built the API it talks to. Phase 2 joins them.
+
+### Four decisions worth stating
+
+1. **One Worker serves both the app and the API**, using Workers static assets. Same origin, so no
+   CORS, no second deployment, and no chance of the two drifting apart in production.
+2. **The route split has to change, and now is the cheapest time.** `/t/:outletId/:qrToken`
+   currently returns JSON, but that is the URL printed on the table card — it must serve HTML to a
+   human. Customer data endpoints move to `/api/t/:outletId/:qrToken`. Breaking, and nothing depends
+   on it yet.
+3. **The cart lives on the phone**, in `localStorage` keyed by the table token. A customer who loses
+   signal mid-order, locks their phone, or reloads must not lose what they picked. This is the
+   single most visible reliability difference between this and a naive QR menu.
+4. **The client mints the order ULID before its first attempt** and reuses it on every retry. The
+   server already deduplicates, so a flaky tap on "Hantar Pesanan" cannot produce two orders — the
+   same property that makes Phase 5's offline replay safe, exercised early.
+
+### New package: `apps/menu`
+
+Vite + React + TypeScript, consuming `design/tokens.css` unchanged.
+
+Reused directly from the Phase 0 prototype, which was the specification: the dish SVG art, the
+translation-layer shape, the category rail, the morphing cart bar, and every design token. Nothing
+about the look is redesigned here — it is the approved design, made real.
+
+```
+apps/menu/src/
+  App.tsx        route: /t/:outletId/:qrToken
+  api.ts         typed client for the customer endpoints
+  cart.ts        cart state, localStorage persistence, sen arithmetic
+  i18n.ts        BM/EN dictionary — same shape as the prototype
+  art.tsx        the enamel-plate dish illustrations
+  screens/       Menu · Cart · OrderPlaced · TableNotFound
+```
+
+### Files to change
+
+`apps/api/src/index.ts` (move customer routes under `/api/t/...`, add SPA fallback) ·
+`apps/api/wrangler.jsonc` (assets binding) · `apps/api/test/isolation.test.ts` and
+`onboarding.test.ts` (updated paths) · `pnpm-workspace.yaml` (already globs `apps/*`)
+
+Reuse rather than rewrite: `lineTotalSen`/`formatMYR` from `apps/api/src/lib/money.ts` and `ulid`
+from `apps/api/src/lib/ids.ts` — extract both into a shared `packages/core` rather than copying,
+because a second implementation of money arithmetic is exactly how the two drift.
+
+### Explicitly not in Phase 2
+
+Live order status over WebSockets (Phase 3), printing (Phase 4), payments (Phase 6). The status card
+shows what the placement response returned; it does not yet update by itself.
+
+### Verification
+
+1. **Playwright against `wrangler dev`**, the whole path a customer takes: seed → open a real table
+   QR URL → toggle to English → add two items → place the order → assert 201, cart cleared, status
+   card shown.
+2. **Cross-outlet** — place at Kampung Baru, then assert through the staff API that Bangi still has
+   zero orders. The Phase 1 guarantee, re-proven from the customer surface.
+3. **Cart survival** — add items, reload the page, cart is still there.
+4. **Double submit** — tap "Hantar Pesanan" twice with the same ULID; exactly one order exists.
+5. **Unknown or stale token** — a clear "meja tidak dijumpai" screen in both languages, never a
+   stack trace or an empty page.
+6. **The 24 existing tests stay green** after the route move.
+7. **Weight budget** — the menu must be interactive fast on a throttled 3G profile, because it is
+   opened on a stranger's phone in a restaurant with bad signal.
 
 ---
 

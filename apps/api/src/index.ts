@@ -10,8 +10,11 @@
  *             Durable Object.
  */
 import { Hono } from "hono";
+import { createMiddleware } from "hono/factory";
 import { drizzle } from "drizzle-orm/d1";
 import { eq } from "drizzle-orm";
+
+import { renderCards } from "./cards";
 
 import * as control from "./control/schema";
 import { hashPin, verifyPin } from "./auth/pin";
@@ -250,6 +253,37 @@ app.get("/api/outlets/:outletId/orders", async (c) => {
   return c.json({ orders: await handle.stub.listOrders() });
 });
 
+/* ------------------------------------------------------------------ *
+ * Floor plan — tables and zones
+ *
+ * Two different kinds of "no" live here and must not be merged:
+ *
+ *   another org's outlet          → 404, you may not know it exists
+ *   cashier editing own outlet    → 403, you are legitimately here but
+ *                                   not permitted to restructure the floor
+ *
+ * Answering 404 for both would hide permission bugs behind a plausible
+ * response; answering 403 for both would leak the customer list.
+ * ------------------------------------------------------------------ */
+
+/** Requires one of `roles`, having already passed the session middleware. */
+function requireRole(...roles: SessionPayload["role"][]) {
+  return createMiddleware<{ Bindings: Env; Variables: Vars }>(
+    async (c, next) => {
+      const session = c.get("session");
+      if (!session || !roles.includes(session.role)) {
+        return c.json(
+          { error: "forbidden", detail: `requires ${roles.join(" or ")}` },
+          403,
+        );
+      }
+      await next();
+    },
+  );
+}
+
+const manages = requireRole("owner", "manager");
+
 app.get("/api/outlets/:outletId/tables", async (c) => {
   const handle = await getOutletForSession(
     c.env,
@@ -257,7 +291,279 @@ app.get("/api/outlets/:outletId/tables", async (c) => {
     c.req.param("outletId"),
   );
   if (!handle) return c.json({ error: "not found" }, 404);
-  return c.json({ tables: await handle.stub.listTables() });
+  const includeArchived = c.req.query("includeArchived") === "true";
+  return c.json({ tables: await handle.stub.listTables(includeArchived) });
+});
+
+app.get("/api/outlets/:outletId/zones", async (c) => {
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  return c.json({ zones: await handle.stub.listZones() });
+});
+
+/** Create one table, or a whole floor at once. */
+app.post("/api/outlets/:outletId/tables", manages, async (c) => {
+  const session = c.get("session");
+  const handle = await getOutletForSession(
+    c.env,
+    session,
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.json<{
+    label?: string;
+    labels?: string[];
+    zoneId?: string | null;
+    capacity?: number | null;
+  }>();
+
+  const labels = body.labels ?? (body.label ? [body.label] : []);
+  const result = await handle.stub.createTables({
+    labels,
+    zoneId: body.zoneId ?? null,
+    capacity: body.capacity ?? null,
+    userId: session.userId,
+  });
+
+  if (!result.ok) {
+    return c.json(
+      { error: result.error, detail: result.detail },
+      result.error === "label_taken" ? 409 : 400,
+    );
+  }
+  return c.json({ tables: result.tables }, 201);
+});
+
+app.patch("/api/outlets/:outletId/tables/:tableId", manages, async (c) => {
+  const session = c.get("session");
+  const handle = await getOutletForSession(
+    c.env,
+    session,
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.json<{
+    label?: string;
+    zoneId?: string | null;
+    capacity?: number | null;
+    sortOrder?: number;
+  }>();
+
+  const result = await handle.stub.updateTable({
+    tableId: c.req.param("tableId"),
+    ...body,
+    userId: session.userId,
+  });
+
+  if (!result.ok) {
+    if (result.error === "not_found") return c.json({ error: "not found" }, 404);
+    return c.json({ error: result.error, detail: result.detail }, 409);
+  }
+  return c.json({ ok: true });
+});
+
+/**
+ * Issue a new QR secret.
+ *
+ * Requires `confirm: true` because this instantly kills the card sitting on
+ * that table — not something to trigger by a mis-tap during lunch.
+ */
+app.post(
+  "/api/outlets/:outletId/tables/:tableId/rotate",
+  manages,
+  async (c) => {
+    const session = c.get("session");
+    const handle = await getOutletForSession(
+      c.env,
+      session,
+      c.req.param("outletId"),
+    );
+    if (!handle) return c.json({ error: "not found" }, 404);
+
+    // An empty or malformed body must fall through to the confirmation
+    // error, not a 500 — rotating is destructive, so the safe path is the
+    // one that refuses.
+    const body = await c.req
+      .json<{ confirm?: boolean }>()
+      .catch((): { confirm?: boolean } => ({}));
+    if (body.confirm !== true) {
+      return c.json(
+        {
+          error: "confirmation_required",
+          detail:
+            "Rotating invalidates the printed card for this table. Send confirm: true.",
+        },
+        400,
+      );
+    }
+
+    const result = await handle.stub.rotateTableToken({
+      tableId: c.req.param("tableId"),
+      userId: session.userId,
+    });
+    if (!result.ok) return c.json({ error: "not found" }, 404);
+    return c.json({ qrToken: result.qrToken });
+  },
+);
+
+app.delete("/api/outlets/:outletId/tables/:tableId", manages, async (c) => {
+  const session = c.get("session");
+  const handle = await getOutletForSession(
+    c.env,
+    session,
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const result = await handle.stub.archiveTable({
+    tableId: c.req.param("tableId"),
+    userId: session.userId,
+  });
+
+  if (!result.ok) {
+    if (result.error === "open_session") {
+      return c.json(
+        {
+          error: "open_session",
+          detail: `Table still has an open bill (${result.detail}). Close it first.`,
+        },
+        409,
+      );
+    }
+    return c.json({ error: "not found" }, 404);
+  }
+  return c.json({ ok: true });
+});
+
+app.post(
+  "/api/outlets/:outletId/tables/:tableId/restore",
+  manages,
+  async (c) => {
+    const session = c.get("session");
+    const handle = await getOutletForSession(
+      c.env,
+      session,
+      c.req.param("outletId"),
+    );
+    if (!handle) return c.json({ error: "not found" }, 404);
+
+    const result = await handle.stub.restoreTable({
+      tableId: c.req.param("tableId"),
+      userId: session.userId,
+    });
+    if (!result.ok) {
+      if (result.error === "not_found") {
+        return c.json({ error: "not found" }, 404);
+      }
+      return c.json({ error: result.error, detail: result.detail }, 409);
+    }
+    return c.json({ ok: true });
+  },
+);
+
+app.post("/api/outlets/:outletId/zones", manages, async (c) => {
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.json<{
+    nameMs: string;
+    nameEn: string;
+    sortOrder?: number;
+  }>();
+  if (!body.nameMs || !body.nameEn) {
+    return c.json({ error: "nameMs and nameEn required" }, 400);
+  }
+  return c.json(await handle.stub.createZone(body), 201);
+});
+
+app.patch("/api/outlets/:outletId/zones/:zoneId", manages, async (c) => {
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  const body = await c.req.json<{
+    nameMs?: string;
+    nameEn?: string;
+    sortOrder?: number;
+  }>();
+  return c.json(
+    await handle.stub.updateZone({ zoneId: c.req.param("zoneId"), ...body }),
+  );
+});
+
+app.delete("/api/outlets/:outletId/zones/:zoneId", manages, async (c) => {
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  // Un-groups its tables rather than deleting them.
+  return c.json(await handle.stub.deleteZone(c.req.param("zoneId")));
+});
+
+app.get("/api/outlets/:outletId/settings", manages, async (c) => {
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  return c.json(await handle.stub.getSettings());
+});
+
+app.patch("/api/outlets/:outletId/settings", manages, async (c) => {
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  const body = await c.req.json<{
+    wifiSsid?: string | null;
+    wifiPassword?: string | null;
+    localOrderUrl?: string | null;
+  }>();
+  return c.json(await handle.stub.updateSettings(body));
+});
+
+/** Print-ready cards for every active table. Open and press Print. */
+app.get("/api/outlets/:outletId/tables/cards", manages, async (c) => {
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const [tables, settings] = await Promise.all([
+    handle.stub.listTables(),
+    handle.stub.getSettings(),
+  ]);
+
+  const html = renderCards({
+    outletName: handle.outlet.name,
+    origin: new URL(c.req.url).origin,
+    outletId: handle.outlet.id,
+    tables: tables.map((t) => ({ label: t.label, qrToken: t.qrToken })),
+    localOrderUrl: settings.localOrderUrl,
+    wifiSsid: settings.wifiSsid,
+    wifiPassword: settings.wifiPassword,
+  });
+
+  return c.html(html);
 });
 
 /** Counter order entry — walk-ins and phone orders. QR is never the only path. */

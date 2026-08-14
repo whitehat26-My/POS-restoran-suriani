@@ -41,20 +41,58 @@ export const menuItems = sqliteTable(
   (t) => [index("idx_items_category").on(t.categoryId)],
 );
 
-export const tables = sqliteTable("tables", {
+/** "Dalam", "Luar", "Tingkat 2" — groups the POS floor map. */
+export const zones = sqliteTable("zones", {
   id: text("id").primaryKey(),
-  /** "Meja 5" */
-  label: text("label").notNull(),
-  /**
-   * A random secret, NOT the table number.
-   *
-   * If a QR encoded `?table=5`, anyone could type `?table=6` and send twenty
-   * plates of chicken to a stranger's table. This is the single most common
-   * way QR ordering fails in the real world.
-   */
-  qrToken: text("qr_token").notNull().unique(),
-  /** empty | ordering | eating | bill_requested */
-  status: text("status").notNull().default("empty"),
+  nameMs: text("name_ms").notNull(),
+  nameEn: text("name_en").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const tables = sqliteTable(
+  "tables",
+  {
+    id: text("id").primaryKey(),
+    /** "Meja 5" */
+    label: text("label").notNull(),
+    /**
+     * A random secret, NOT the table number.
+     *
+     * If a QR encoded `?table=5`, anyone could type `?table=6` and send twenty
+     * plates of chicken to a stranger's table. This is the single most common
+     * way QR ordering fails in the real world.
+     */
+    qrToken: text("qr_token").notNull().unique(),
+    /** empty | ordering | eating | bill_requested */
+    status: text("status").notNull().default("empty"),
+    zoneId: text("zone_id"),
+    /** How many people it seats. Null when nobody has said. */
+    capacity: integer("capacity"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    /**
+     * Soft delete.
+     *
+     * `table_sessions.table_id` points here, so a real DELETE would orphan
+     * every historical bill this table ever had — "Meja 05" becomes "?" in
+     * last month's reports. Archived rows stay readable for history and vanish
+     * only from active listings.
+     */
+    archivedAt: integer("archived_at"),
+    /** When the QR secret was last rotated, invalidating printed cards. */
+    tokenRotatedAt: integer("token_rotated_at"),
+  },
+  (t) => [index("idx_tables_archived").on(t.archivedAt)],
+);
+
+/** Single-row outlet configuration. */
+export const settings = sqliteTable("settings", {
+  id: integer("id").primaryKey(),
+  wifiSsid: text("wifi_ssid"),
+  /** The guest network password, printed on the table card. Staff-only. */
+  wifiPassword: text("wifi_password"),
+  /** e.g. http://192.168.1.50:8080 — set once Phase 5b exists. */
+  localOrderUrl: text("local_order_url"),
+  updatedAt: integer("updated_at").notNull().default(0),
 });
 
 /** The open bill. One per table occupancy, shared by every phone at it. */

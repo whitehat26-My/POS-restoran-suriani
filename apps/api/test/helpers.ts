@@ -102,3 +102,21 @@ export async function createTenant(name: string): Promise<Tenant> {
 export function auth(tenant: Tenant): HeadersInit {
   return { Authorization: `Bearer ${tenant.token}` };
 }
+
+/**
+ * A valid session for the same tenant but a different role.
+ *
+ * Used to prove the role gate answers 403 for a cashier while still answering
+ * 404 for someone from another organisation — two different kinds of "no"
+ * that must never collapse into one.
+ */
+export async function authAs(
+  tenant: Tenant,
+  role: "owner" | "manager" | "cashier",
+): Promise<HeadersInit> {
+  const token = await createSession(
+    { userId: tenant.userId, orgId: tenant.orgId, role },
+    env.SESSION_SECRET,
+  );
+  return { Authorization: `Bearer ${token}` };
+}

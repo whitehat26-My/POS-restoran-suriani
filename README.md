@@ -10,15 +10,42 @@ Two branches of Restoran Suriani are customer zero.
 
 ## Status
 
-**Phase 1 complete.** Two outlets exist with provably isolated data.
+**Phase 2a complete.** A restaurant's floor plan is its own, and its QR cards print.
 
 | Phase | | |
 |---|---|---|
 | 0 | Design system + clickable prototype | ✅ |
 | 1 | Cloudflare scaffold, control plane, one Durable Object per outlet, auth | ✅ |
-| 2 | Customer QR ordering PWA | next |
+| 2a | Configurable tables, zones, QR rotation, printable cards | ✅ |
+| 2b | Customer QR ordering app | next |
 
 Full plan and roadmap: [`docs/PLAN.md`](docs/PLAN.md).
+
+## Managing the floor plan
+
+Tables belong to the restaurant, not to a seed script.
+
+```
+POST   /api/outlets/:id/tables            one, or {"labels": ["Meja 01", …]}
+PATCH  /api/outlets/:id/tables/:tableId   label, zone, capacity, order
+POST   /api/outlets/:id/tables/:id/rotate new QR secret — needs {"confirm": true}
+DELETE /api/outlets/:id/tables/:tableId   archive (never a real delete)
+GET    /api/outlets/:id/tables/cards      print-ready A6 cards
+```
+
+Four rules that exist because the alternative loses data or breaks service:
+
+- **Archive, never delete.** `table_sessions` points at these rows, so a real delete would turn
+  "Meja 05" into "?" in every historical bill.
+- **Archiving refuses while a bill is open** (409), so tidying the floor plan mid-service cannot
+  strand a table that is still eating.
+- **Rotating a QR needs explicit confirmation** and is audited — it instantly kills the printed card.
+- **Duplicate labels are rejected**, and a colliding bulk create writes nothing rather than
+  partially succeeding.
+
+Cashiers get **403** on all of these; another organisation gets **404**. Those are different
+answers on purpose — 404 everywhere would hide permission bugs, 403 everywhere would leak the
+customer list.
 
 ## Getting started
 

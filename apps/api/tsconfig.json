@@ -13,6 +13,8 @@
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     "verbatimModuleSyntax": true,
+    // qrcode-generator is a CommonJS `export =` module.
+    "esModuleInterop": true,
     "skipLibCheck": true,
     "noEmit": true,
     "isolatedModules": true,
