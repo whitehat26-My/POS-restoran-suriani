@@ -32,14 +32,15 @@
     }
   ],
 
-  // The customer ordering app, built by `pnpm --filter @suriani/menu build`.
+  // Both web apps, assembled by `pnpm build:web` at the repo root:
+  // the customer app at /, the till at /pos/.
   //
   // single-page-application fallback is what makes /t/<outlet>/<token> — the
   // URL printed on every table card — serve the ordering page. The API is
   // pinned to the Worker with run_worker_first so the SPA fallback can never
   // swallow a data route.
   "assets": {
-    "directory": "../menu/dist",
+    "directory": "./.assets",
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*", "/health"]
   },

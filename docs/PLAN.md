@@ -873,7 +873,113 @@ payments and split bills (Phase 6).
 
 ---
 
+## 16. Phase 3 — cashier POS with live orders
+
+**Goal:** the till. A dark floor map of the restaurant's real tables grouped by its real zones, orders
+appearing the moment a phone places them, bills opened/inspected/closed, manual entry for walk-ins,
+and the two customer buttons that finally have somewhere to ring: *Minta Bil* and *Panggil Pelayan*.
+
+**Gate:** an order placed on a phone appears on the till in **under 1 second**, measured.
+
+### Realtime: the Durable Object broadcasts, the till listens
+
+Each outlet's DO already serialises every write; Phase 3 adds **hibernatable WebSockets** to the same
+object, so the write and the broadcast are one operation with nothing to drift.
+
+- `OutletDO.fetch()` accepts upgrades via `ctx.acceptWebSocket()`; broadcast = `ctx.getWebSockets()`.
+- **On connect the server pushes a full floor snapshot**, then deltas: `order.placed`,
+  `order.served`, `bill.requested`, `waiter.called`, `table.changed`, `item.availability`.
+  A reconnecting till never renders stale state, because every connection starts from truth.
+- **Free-tier economics verified in the docs:** outgoing WS messages are free; incoming count 20:1;
+  hibernation means an idle till costs nothing. A POS mostly listens — this is the cheap direction.
+- Auth: the WS upgrade rides the existing session cookie (same origin), through the same
+  middleware + tenant door as every staff route. Cross-tenant upgrade → 404, unauthenticated → 401.
+- The upgrade needs `stub.fetch()` — the tenant guard confines `env.OUTLET.get`, not stub use, so
+  no guard change.
+- Compat date 2026-08-01 ⇒ `web_socket_auto_reply_to_close` already on.
+
+### Customer side: polling, deliberately
+
+The customer's status card updates by **polling `GET /api/t/:o/:token/status` every ~12s while
+visible** — not a public WebSocket. A WS per customer phone opens an unauthenticated-ish long-lived
+surface for strangers and buys nothing at this cadence; ~200 status polls over a 45-minute meal is
+noise. The endpoint returns the session's orders with statuses plus a `menuVersion`; when the version
+bumps (an item 86'd), the app silently refetches the menu — which is how "ayam habis" vanishes from a
+phone already sitting on the menu page.
+
+### New OutletDO methods
+
+`getFloor()` (zones + tables + open-session totals) · `getSessionDetail(tableId)` ·
+`markOrderServed(orderId)` · `requestBill(qrToken)` / `callWaiter(qrToken)` (customer, token-authed,
+per-table throttled) · `closeSession(sessionId, userId)` · `setItemAvailability(itemId, available)`
+(bumps `menuVersion`, audited — this is 86-ing) · `getStatus(qrToken)`. Every mutation broadcasts.
+
+`placeOrder` gains `tableId` as an alternative to `qrToken` for the staff path — the POS knows table
+ids, not QR secrets. **`closeSession` is a primitive Phase 6 keeps**: payments will front it
+(record payment → close), so nothing here is throwaway; in Phase 3 it closes unpaid with an audit
+entry, which the pilot needs just to reset tables between tests.
+
+### Routes
+
+Staff (session + tenant door): `GET /api/outlets/:id/floor` · `GET /api/outlets/:id/sessions/:sid` ·
+`POST /api/outlets/:id/orders/:orderId/served` · `POST /api/outlets/:id/sessions/:sid/close` ·
+`PATCH /api/outlets/:id/items/:itemId/availability` · `GET /api/outlets/:id/ws` (upgrade).
+All roles may operate the till; the floor-plan 403 gate stays where it is.
+
+Customer (token-authed): `POST /api/t/:o/:token/bill-request` · `POST /api/t/:o/:token/call-waiter` ·
+`GET /api/t/:o/:token/status`.
+
+### `apps/pos` — the till app
+
+Vite + React on the same tokens; the deliberately dark `--pos-*` palette from Phase 0 (less glare
+over a ten-hour shift). Login (phone + PIN, existing endpoint, cookie session) → one main screen:
+
+- **Floor map grouped by the outlet's real zones** — grey empty / blue ordering / green eating /
+  amber bill-requested, the amber ring pulse from the prototype. Tap a table → bill sheet: orders,
+  running total, mark served, close bill.
+- **Live feed column** — incoming tickets, newest first, one-tap *Sudah dihidang*.
+- **Menu column** for manual entry (walk-ins): same modifier sheet logic as the customer app, priced
+  by the server, placed against a chosen table via `tableId`.
+- **86 toggle** on each menu item — one tap flips availability everywhere.
+- **Connection health pill**: green live / amber reconnecting (exponential backoff, snapshot resync
+  on reopen). The cashier must always know whether the screen is truth.
+- Served at **`/pos/`** by the same Worker: a root build step assembles `.assets/` (menu at root,
+  POS under `/pos/`, `vite base:'/pos/'`); wrangler's assets directory moves to `.assets/`. The SPA
+  fallback still points at the customer app; the POS is a single route and needs no deep links.
+
+Customer app additions: *Minta Bil* and *Panggil Pelayan* buttons on the status card, and the
+polling loop above driving the Diterima → Dimasak → Dihidang track for real.
+
+### Files
+
+New: `apps/pos/*` · `apps/api/src/outlet/ws.ts` (event types + broadcast helper).
+Changed: `OutletDO.ts` (fetch handler, methods above) · `index.ts` (routes) · `wrangler.jsonc`
+(assets dir → `.assets/`) · `vitest.config.ts` (stub path) · root `package.json` (`build:web`
+assembling `.assets/`) · `ci.yml` (build both apps) · `apps/menu` (status polling + two buttons) ·
+`apps/menu/e2e/customer-flow.mjs` (extended two-page scenario).
+Reuse: tenant door as-is · `requireRole` stays on floor-plan routes · `@suriani/core` money/ids in
+the POS app · `batchForSql` untouched.
+
+### Verification
+
+1. **ws.test.ts** — in real workerd via `stub.fetch` upgrade + `SELF`: unauthenticated upgrade 401;
+   cross-tenant 404; on-connect snapshot matches the floor; placing an order over HTTP delivers
+   `order.placed` to a connected socket; `evictDurableObject` then confirms the socket survives
+   hibernation and still receives the next event.
+2. **Lifecycle** — serve → status changes and broadcasts; bill-request flips session + table state;
+   close frees the table and is audited; closed table's next order opens a fresh session.
+3. **86-ing** — availability flip broadcasts, bumps `menuVersion`, blocks new orders (already
+   enforced server-side), and the status poll tells an idle phone to refetch.
+4. **Throttle** — repeated call-waiter from one table coalesces rather than spamming the till.
+5. **E2E, two pages** — customer orders on one Playwright page, POS on another: ticket appears,
+   **elapsed time asserted < 1000 ms**; mark served → customer's track reaches *Dihidang* on the
+   next poll; Minta Bil turns the table amber on the till.
+6. All existing 45 tests stay green; guard/typecheck/lint clean; CI builds both apps.
+
+---
+
 _Verified against live sources: [Workers pricing & limits](https://developers.cloudflare.com/workers/platform/pricing/) ·
+[Durable Objects hibernatable WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/) ·
 [Workers limits](https://developers.cloudflare.com/workers/platform/limits/) ·
 [Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/) ·
 [D1 limits](https://developers.cloudflare.com/d1/platform/limits/) ·

@@ -227,3 +227,12 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ---- status card actions ---- */
+.status-acts { display: flex; gap: var(--s2); margin-top: var(--s4); flex-wrap: wrap; align-items: center; }
+.btn-card {
+  flex: 1; padding: 10px 14px; border-radius: var(--r-full);
+  background: #fff; color: var(--enamel-deep); font-weight: 700; font-size: var(--t-sm);
+}
+.btn-card-ghost { background: rgba(255,255,255,.16); color: #fff; }
+.status-note { margin: 0; font-size: var(--t-xs); opacity: .9; flex: 1; }

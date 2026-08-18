@@ -5,18 +5,29 @@ import type { MenuItem, TablePage } from "../api";
 import type { Lang, Key } from "../i18n";
 import type { PlacedSummary } from "../cart";
 import { DishArt } from "../art";
+import { StatusCard } from "../StatusCard";
 
 export function MenuScreen({
   page,
   lang,
   t,
   placed,
+  stage,
+  billRequested,
+  waiterCalled,
+  onBill,
+  onWaiter,
   onPick,
 }: {
   page: TablePage;
   lang: Lang;
   t: (k: Key) => string;
   placed: PlacedSummary[];
+  stage: 1 | 2 | 3;
+  billRequested: boolean;
+  waiterCalled: boolean;
+  onBill: () => void;
+  onWaiter: () => void;
   onPick: (item: MenuItem) => void;
 }) {
   const categories = page.menu.categories;
@@ -27,41 +38,15 @@ export function MenuScreen({
   return (
     <div className="scroll">
       {latest && (
-        <div className="status-card">
-          <div className="status-head">
-            <strong>{t("st_title")}</strong>
-            <span className="status-eta num">
-              {t("st_eta")} {latest.etaMin} {t("min")}
-            </span>
-          </div>
-          <div className="track">
-            <span className="now" />
-            <span />
-            <span />
-          </div>
-          <div className="track-labels">
-            <span>{t("st_1")}</span>
-            <span>{t("st_2")}</span>
-            <span>{t("st_3")}</span>
-          </div>
-          <div className="status-items">
-            {placed.flatMap((o) =>
-              o.lines.map((l, i) => (
-                <div className="status-item" key={`${o.orderId}_${i}`}>
-                  <span>
-                    {l.qty}× {l.name}
-                  </span>
-                </div>
-              )),
-            )}
-            <div className="status-item">
-              <span>{t("total")}</span>
-              <span className="num">
-                {formatMYR(placed.reduce((s, o) => s + o.totalSen, 0))}
-              </span>
-            </div>
-          </div>
-        </div>
+        <StatusCard
+          t={t}
+          placed={placed}
+          stage={stage}
+          billRequested={billRequested}
+          waiterCalled={waiterCalled}
+          onBill={onBill}
+          onWaiter={onWaiter}
+        />
       )}
 
       <nav className="cat-rail">

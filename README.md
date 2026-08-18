@@ -10,7 +10,7 @@ Two branches of Restoran Suriani are customer zero.
 
 ## Status
 
-**Phase 2b complete.** Customers order from their own phones.
+**Phase 3 complete.** The till is live — an order placed on a phone reaches it in ~150 ms.
 
 | Phase | | |
 |---|---|---|
@@ -18,7 +18,8 @@ Two branches of Restoran Suriani are customer zero.
 | 1 | Cloudflare scaffold, control plane, one Durable Object per outlet, auth | ✅ |
 | 2a | Configurable tables, zones, QR rotation, printable cards | ✅ |
 | 2b | Customer ordering app — menu, modifiers, cart, offline shell | ✅ |
-| 3 | Cashier POS with live orders | next |
+| 3 | Cashier POS — live floor map, tickets, bills, 86-ing, Minta Bil / Panggil Pelayan | ✅ |
+| 4 | Kitchen print pipeline | next |
 
 Full plan and roadmap: [`docs/PLAN.md`](docs/PLAN.md).
 
@@ -66,7 +67,7 @@ ADMIN_SEED_TOKEN=any-local-value pnpm seed
 The seed prints a working table QR URL for each branch.
 
 ```bash
-pnpm test        # 45 tests, inside the real Workers runtime
+pnpm test        # 55 tests, inside the real Workers runtime
 pnpm typecheck
 pnpm lint
 ```
@@ -98,13 +99,34 @@ apps/api/            Cloudflare Worker — API, control plane, outlet Durable Ob
   src/outlet/        per-outlet schema, migrations, Durable Object
   src/control/       D1 schema: orgs, users, outlets, devices, usage
   test/              isolation · onboarding · tables · modifiers · pricing · money
-apps/menu/           customer ordering app (Vite + React), served by the same
-                     Worker as static assets; e2e/ holds the browser test
+apps/menu/           customer ordering app (Vite + React), served at /
+apps/pos/            the till (Vite + React, dark), served at /pos/
+                     — both assembled into apps/api/.assets by `pnpm build:web`;
+                     each app's e2e/ holds its browser test
 packages/core/       shared money arithmetic and ids — one implementation for
                      the API, the customer app, and later the tablet
 design/              tokens.css and the Phase 0 clickable prototype
 docs/PLAN.md         product plan, architecture, phasing
 ```
+
+## The till
+
+`/pos/` on the same Worker. PIN login, then one dark screen (less glare over a ten-hour
+shift): the floor map grouped by the outlet's real zones, a live ticket feed, and the menu
+column for counter orders and 86-ing.
+
+- **Realtime is the Durable Object itself.** The object that stores an order broadcasts it
+  over hibernatable WebSockets in the same call — no separate pub/sub to drift. Every
+  connection starts with a full floor snapshot, so a reconnecting till never renders stale
+  state. Outgoing WS messages are free and idle sockets hibernate, so a quiet till costs
+  nothing.
+- **Customer phones poll instead** (~12s while an order is open): the status endpoint walks
+  the Diterima → Dimasak → Dihidang track and carries a `menuVersion` — when the cashier taps
+  "86", phones already on the menu quietly refetch.
+- *Minta Bil* turns the table amber on the floor map; *Panggil Pelayan* rings once per minute
+  per table, coalescing impatient taps.
+- Closing a bill is the primitive Phase 6's payments will front — explicit and audit-logged,
+  never silent.
 
 ## The customer surface
 

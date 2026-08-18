@@ -127,6 +127,8 @@ export const settings = sqliteTable("settings", {
   wifiPassword: text("wifi_password"),
   /** e.g. http://192.168.1.50:8080 — set once Phase 5b exists. */
   localOrderUrl: text("local_order_url"),
+  /** Bumped on any menu change; phones refetch when they see it move. */
+  menuVersion: integer("menu_version").notNull().default(1),
   updatedAt: integer("updated_at").notNull().default(0),
 });
 

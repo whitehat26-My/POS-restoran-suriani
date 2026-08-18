@@ -194,6 +194,16 @@ export const MIGRATIONS: Migration[] = [
       `CREATE INDEX idx_modifier_options_group ON modifier_options (group_id)`,
     ],
   },
+  {
+    // menu_version lets customer phones notice a changed menu cheaply: the
+    // status poll returns it, and a bump (an item 86'd, a price edit) tells
+    // the phone to refetch. This is how "ayam habis" disappears from a phone
+    // already sitting on the menu page, without any push infrastructure.
+    version: 4,
+    statements: [
+      `ALTER TABLE settings ADD COLUMN menu_version INTEGER NOT NULL DEFAULT 1`,
+    ],
+  },
 ];
 
 /** Highest version this build knows how to migrate to. */

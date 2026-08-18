@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatMYR } from "@suriani/core/money";
 
 import {
+  callWaiter,
+  fetchStatus,
   fetchTablePage,
   placeOrder,
+  requestBill,
   TableNotFoundError,
   type MenuItem,
   type TablePage,
@@ -49,6 +52,10 @@ export function App() {
   const [activeItem, setActiveItem] = useState<MenuItem | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<Key | null>(null);
+  const [stage, setStage] = useState<1 | 2 | 3>(1);
+  const [billRequested, setBillRequested] = useState(false);
+  const [waiterCalled, setWaiterCalled] = useState(false);
+  const menuVersionRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!path) {
@@ -68,6 +75,67 @@ export function App() {
         // fetch; reaching here means we are offline with nothing cached.
         else setOffline(true);
       });
+  }, [path]);
+
+  // The status poll: every ~12s while an order exists and the tab is
+  // visible. Cheap on purpose — a WebSocket per customer phone would open a
+  // long-lived surface to strangers and buy nothing at this cadence.
+  useEffect(() => {
+    if (!path || placed.length === 0) return;
+
+    let cancelled = false;
+    const tick = async () => {
+      if (document.hidden) return;
+      try {
+        const status = await fetchStatus(path.outletId, path.qrToken);
+        if (cancelled) return;
+
+        if (status.session) {
+          const orders = status.session.orders;
+          const allServed =
+            orders.length > 0 && orders.every((o) => o.status === "served");
+          const anyCooking = orders.some((o) => o.status === "printed");
+          setStage(allServed ? 3 : anyCooking ? 2 : 1);
+          setBillRequested(status.session.status === "bill_requested");
+        }
+
+        // A moved menuVersion means the kedai changed something — an item
+        // 86'd, a price fixed. Refetch quietly so this phone matches reality.
+        if (
+          menuVersionRef.current !== null &&
+          status.menuVersion !== menuVersionRef.current
+        ) {
+          fetchTablePage(path.outletId, path.qrToken).then(setPage, () => {});
+        }
+        menuVersionRef.current = status.menuVersion;
+      } catch {
+        /* a failed poll is silence, not an error banner */
+      }
+    };
+
+    void tick();
+    const timer = window.setInterval(() => void tick(), 12_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [path, placed.length]);
+
+  const doBill = useCallback(() => {
+    if (!path) return;
+    requestBill(path.outletId, path.qrToken)
+      .then(() => setBillRequested(true))
+      .catch(() => setError("error_generic"));
+  }, [path]);
+
+  const doWaiter = useCallback(() => {
+    if (!path) return;
+    callWaiter(path.outletId, path.qrToken)
+      .then(() => {
+        setWaiterCalled(true);
+        window.setTimeout(() => setWaiterCalled(false), 60_000);
+      })
+      .catch(() => setError("error_generic"));
   }, [path]);
 
   const switchLang = useCallback((next: Lang) => {
@@ -207,6 +275,11 @@ export function App() {
           lang={lang}
           t={t}
           placed={placed}
+          stage={stage}
+          billRequested={billRequested}
+          waiterCalled={waiterCalled}
+          onBill={doBill}
+          onWaiter={doWaiter}
           onPick={setActiveItem}
         />
       )}
@@ -229,6 +302,11 @@ export function App() {
           t={t}
           lang={lang}
           placed={placed}
+          stage={stage}
+          billRequested={billRequested}
+          waiterCalled={waiterCalled}
+          onBill={doBill}
+          onWaiter={doWaiter}
           onMore={() => setView("menu")}
         />
       )}

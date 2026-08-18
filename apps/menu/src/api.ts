@@ -89,3 +89,37 @@ export async function placeOrder(
   }
   return res.json();
 }
+
+export interface SessionStatus {
+  menuVersion: number;
+  table: { label: string; status: string };
+  session: {
+    status: string;
+    totalSen: number;
+    orders: { id: string; status: string; placedAt: number }[];
+  } | null;
+}
+
+export async function fetchStatus(
+  outletId: string,
+  qrToken: string,
+): Promise<SessionStatus> {
+  const res = await fetch(`/api/t/${outletId}/${qrToken}/status`);
+  if (res.status === 404) throw new TableNotFoundError();
+  if (!res.ok) throw new Error(`status failed: ${res.status}`);
+  return res.json();
+}
+
+export async function requestBill(outletId: string, qrToken: string) {
+  const res = await fetch(`/api/t/${outletId}/${qrToken}/bill-request`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`bill request failed: ${res.status}`);
+}
+
+export async function callWaiter(outletId: string, qrToken: string) {
+  const res = await fetch(`/api/t/${outletId}/${qrToken}/call-waiter`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`call failed: ${res.status}`);
+}

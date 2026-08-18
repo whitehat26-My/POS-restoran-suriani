@@ -25,6 +25,13 @@ import { runMigrations } from "./migrations";
 import { id, qrToken, ulid } from "../lib/ids";
 import { batchForSql } from "../lib/chunk";
 import { lineTotalSen, type Modifier, type Sen } from "../lib/money";
+import {
+  broadcast,
+  type FloorTable,
+  type FloorZone,
+  type OutletEvent,
+  type TicketLine,
+} from "./ws";
 
 export interface SeedCategory {
   id: string;
@@ -84,7 +91,13 @@ export interface PlaceOrderLine {
 }
 
 export interface PlaceOrderInput {
-  qrToken: string;
+  /** Customer path: the table's QR secret. */
+  qrToken?: string;
+  /**
+   * Staff path: the POS knows table ids, not QR secrets. Exactly one of
+   * qrToken / tableId must be set.
+   */
+  tableId?: string;
   lines: PlaceOrderLine[];
   /** Client-generated ULID. Replaying the same one is a no-op. */
   clientUlid?: string;
@@ -143,6 +156,125 @@ export class OutletDO extends DurableObject<Env> {
 
   async schemaVersion(): Promise<number> {
     return this.version;
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Realtime
+   *
+   * The worker authenticates the till (session cookie + tenant door) and
+   * forwards the upgrade here. Hibernatable sockets: an idle till keeps its
+   * connection while this object sleeps, at no duration cost. Outgoing
+   * messages are free, and a POS mostly listens.
+   * ---------------------------------------------------------------- */
+
+  override async fetch(request: Request): Promise<Response> {
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      return new Response("expected websocket", { status: 426 });
+    }
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    this.ctx.acceptWebSocket(server);
+
+    // Every connection starts from truth: full snapshot before any delta,
+    // so a reconnecting till never renders stale state.
+    server.send(JSON.stringify(await this.buildSnapshot()));
+
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  override async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
+    // The till speaks one word. Everything that changes state goes through
+    // the authenticated HTTP routes, never through the socket.
+    if (message === "resync") {
+      ws.send(JSON.stringify(await this.buildSnapshot()));
+    }
+  }
+
+  override async webSocketClose(ws: WebSocket, code: number, reason: string) {
+    // compat date >= 2026-04-07 auto-replies to Close; nothing to do.
+    void ws;
+    void code;
+    void reason;
+  }
+
+  private async buildSnapshot(): Promise<OutletEvent> {
+    const [zones, floor, settings] = await Promise.all([
+      this.listZones(),
+      this.getFloor(),
+      this.getSettings(),
+    ]);
+    return {
+      type: "snapshot",
+      zones: zones as FloorZone[],
+      tables: floor,
+      menuVersion: settings.menuVersion ?? 1,
+    };
+  }
+
+  /** Tables with their open bill, the shape the floor map renders. */
+  async getFloor(): Promise<FloorTable[]> {
+    const tables = await this.listTables();
+    const sessions = await this.db
+      .select()
+      .from(schema.tableSessions)
+      .where(
+        inArray(schema.tableSessions.status, ["open", "bill_requested"]),
+      );
+    const openByTable = new Map(sessions.map((s) => [s.tableId, s]));
+
+    const sessionIds = sessions.map((s) => s.id);
+    const orders = sessionIds.length
+      ? await this.db
+          .select()
+          .from(schema.orders)
+          .where(inArray(schema.orders.sessionId, sessionIds))
+      : [];
+    const live = orders.filter((o) => o.status !== "voided");
+    const orderIds = live.map((o) => o.id);
+    const items = orderIds.length
+      ? await this.db
+          .select()
+          .from(schema.orderItems)
+          .where(inArray(schema.orderItems.orderId, orderIds))
+      : [];
+
+    const orderTotals = new Map<string, Sen>();
+    for (const li of items) {
+      const total =
+        (orderTotals.get(li.orderId) ?? 0) +
+        lineTotalSen(li.unitPriceSen, li.qty, JSON.parse(li.modifiers) as Modifier[]);
+      orderTotals.set(li.orderId, total);
+    }
+    const sessionTotals = new Map<string, { totalSen: Sen; count: number }>();
+    for (const o of live) {
+      const agg = sessionTotals.get(o.sessionId) ?? { totalSen: 0, count: 0 };
+      agg.totalSen += orderTotals.get(o.id) ?? 0;
+      agg.count += 1;
+      sessionTotals.set(o.sessionId, agg);
+    }
+
+    return tables.map((t) => {
+      const session = openByTable.get(t.id);
+      const agg = session ? sessionTotals.get(session.id) : undefined;
+      return {
+        id: t.id,
+        label: t.label,
+        zoneId: t.zoneId,
+        capacity: t.capacity,
+        sortOrder: t.sortOrder,
+        status: t.status,
+        session: session
+          ? {
+              id: session.id,
+              openedAt: session.openedAt,
+              status: session.status,
+              totalSen: agg?.totalSen ?? 0,
+              orderCount: agg?.count ?? 0,
+            }
+          : null,
+      };
+    });
   }
 
   /** Install menu and tables. Used by the seed script and by tests. */
@@ -297,6 +429,18 @@ export class OutletDO extends DurableObject<Env> {
       .select()
       .from(schema.tables)
       .where(eq(schema.tables.qrToken, token))
+      .limit(1);
+    const table = rows[0];
+    if (!table || table.archivedAt !== null) return null;
+    return table;
+  }
+
+  /** Staff-path lookup. Archived tables are off the floor here too. */
+  private async resolveTableById(tableId: string) {
+    const rows = await this.db
+      .select()
+      .from(schema.tables)
+      .where(eq(schema.tables.id, tableId))
       .limit(1);
     const table = rows[0];
     if (!table || table.archivedAt !== null) return null;
@@ -618,6 +762,7 @@ export class OutletDO extends DurableObject<Env> {
         wifiSsid: null,
         wifiPassword: null,
         localOrderUrl: null,
+        menuVersion: 1,
         updatedAt: 0,
       }
     );
@@ -654,7 +799,11 @@ export class OutletDO extends DurableObject<Env> {
   async placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
     const clientUlid = input.clientUlid ?? ulid();
 
-    const table = await this.resolveTable(input.qrToken);
+    const table = input.tableId
+      ? await this.resolveTableById(input.tableId)
+      : input.qrToken
+        ? await this.resolveTable(input.qrToken)
+        : null;
     if (!table) return { ok: false, error: "unknown_table" };
     if (input.lines.length === 0) return { ok: false, error: "empty_order" };
 
@@ -883,6 +1032,28 @@ export class OutletDO extends DurableObject<Env> {
       .set({ status: "ordering" })
       .where(eq(schema.tables.id, table.id));
 
+    // The write and the announcement are one operation: every connected till
+    // hears about this order in the same call that stored it.
+    broadcast(this.ctx, {
+      type: "order.placed",
+      orderId,
+      tableId: table.id,
+      tableLabel: table.label,
+      sessionId: session.id,
+      placedAt: now,
+      source: input.source ?? "qr",
+      totalSen,
+      lines: itemRows.map(
+        (r): TicketLine => ({
+          qty: r.qty,
+          nameMs: r.nameMs,
+          nameEn: r.nameEn,
+          modifiers: JSON.parse(r.modifiers ?? "[]") as Modifier[],
+          notes: r.notes ?? null,
+        }),
+      ),
+    });
+
     return {
       ok: true,
       order: {
@@ -900,10 +1071,14 @@ export class OutletDO extends DurableObject<Env> {
   async listOrders(): Promise<
     Array<{
       id: string;
+      sessionId: string;
+      tableId: string;
       tableLabel: string;
       placedAt: number;
       status: string;
+      source: string;
       totalSen: Sen;
+      lines: TicketLine[];
     }>
   > {
     const orders = await this.db.select().from(schema.orders);
@@ -934,10 +1109,24 @@ export class OutletDO extends DurableObject<Env> {
           );
         return {
           id: o.id,
+          sessionId: o.sessionId,
+          tableId: sessionRow?.tableId ?? "?",
           tableLabel: tableRow?.label ?? "?",
           placedAt: o.placedAt,
           status: o.status,
+          source: o.source,
           totalSen,
+          lines: items
+            .filter((li) => li.orderId === o.id)
+            .map(
+              (li): TicketLine => ({
+                qty: li.qty,
+                nameMs: li.nameMs,
+                nameEn: li.nameEn,
+                modifiers: JSON.parse(li.modifiers) as Modifier[],
+                notes: li.notes,
+              }),
+            ),
         };
       })
       .sort((a, b) => b.placedAt - a.placedAt);
@@ -949,6 +1138,320 @@ export class OutletDO extends DurableObject<Env> {
       .select()
       .from(schema.printJobs)
       .where(eq(schema.printJobs.status, "queued"));
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Service lifecycle — the till's verbs
+   * ---------------------------------------------------------------- */
+
+  async markOrderServed(input: {
+    orderId: string;
+    userId?: string;
+  }): Promise<{ ok: true } | { ok: false; error: "not_found" }> {
+    const rows = await this.db
+      .select()
+      .from(schema.orders)
+      .where(eq(schema.orders.id, input.orderId))
+      .limit(1);
+    const order = rows[0];
+    if (!order || order.status === "voided") {
+      return { ok: false, error: "not_found" };
+    }
+
+    await this.db
+      .update(schema.orders)
+      .set({ status: "served" })
+      .where(eq(schema.orders.id, order.id));
+
+    const session = (
+      await this.db
+        .select()
+        .from(schema.tableSessions)
+        .where(eq(schema.tableSessions.id, order.sessionId))
+        .limit(1)
+    )[0];
+
+    if (session) {
+      await this.db
+        .update(schema.tables)
+        .set({ status: "eating" })
+        .where(
+          and(
+            eq(schema.tables.id, session.tableId),
+            eq(schema.tables.status, "ordering"),
+          ),
+        );
+      broadcast(this.ctx, {
+        type: "order.served",
+        orderId: order.id,
+        tableId: session.tableId,
+      });
+    }
+    return { ok: true };
+  }
+
+  /** Customer taps "Minta Bil". Token-authed; lights the till amber. */
+  async requestBill(
+    token: string,
+  ): Promise<
+    { ok: true; totalSen: Sen } | { ok: false; error: "unknown_table" | "no_open_bill" }
+  > {
+    const table = await this.resolveTable(token);
+    if (!table) return { ok: false, error: "unknown_table" };
+
+    const session = (
+      await this.db
+        .select()
+        .from(schema.tableSessions)
+        .where(
+          and(
+            eq(schema.tableSessions.tableId, table.id),
+            inArray(schema.tableSessions.status, ["open", "bill_requested"]),
+          ),
+        )
+        .limit(1)
+    )[0];
+    if (!session) return { ok: false, error: "no_open_bill" };
+
+    await this.db
+      .update(schema.tableSessions)
+      .set({ status: "bill_requested" })
+      .where(eq(schema.tableSessions.id, session.id));
+    await this.db
+      .update(schema.tables)
+      .set({ status: "bill_requested" })
+      .where(eq(schema.tables.id, table.id));
+
+    const floor = await this.getFloor();
+    const totalSen =
+      floor.find((t) => t.id === table.id)?.session?.totalSen ?? 0;
+
+    broadcast(this.ctx, {
+      type: "bill.requested",
+      tableId: table.id,
+      sessionId: session.id,
+      totalSen,
+    });
+    return { ok: true, totalSen };
+  }
+
+  /**
+   * Customer taps "Panggil Pelayan".
+   *
+   * Throttled per table: repeated taps inside a minute coalesce, so an
+   * impatient table cannot turn the till into an alarm clock. The throttle
+   * clock lives in durable storage, surviving hibernation.
+   */
+  async callWaiter(
+    token: string,
+  ): Promise<
+    | { ok: true; coalesced: boolean }
+    | { ok: false; error: "unknown_table" }
+  > {
+    const table = await this.resolveTable(token);
+    if (!table) return { ok: false, error: "unknown_table" };
+
+    const key = `waiter_called_${table.id}`;
+    const last = (await this.ctx.storage.get<number>(key)) ?? 0;
+    const now = Date.now();
+    if (now - last < 60_000) return { ok: true, coalesced: true };
+
+    await this.ctx.storage.put(key, now);
+    broadcast(this.ctx, {
+      type: "waiter.called",
+      tableId: table.id,
+      tableLabel: table.label,
+    });
+    return { ok: true, coalesced: false };
+  }
+
+  /** The bill sheet: one table's open session with every order and line. */
+  async getSessionDetail(tableId: string) {
+    const table = await this.resolveTableById(tableId);
+    if (!table) return null;
+
+    const session = (
+      await this.db
+        .select()
+        .from(schema.tableSessions)
+        .where(
+          and(
+            eq(schema.tableSessions.tableId, table.id),
+            inArray(schema.tableSessions.status, ["open", "bill_requested"]),
+          ),
+        )
+        .limit(1)
+    )[0];
+    if (!session) return { table: { id: table.id, label: table.label }, session: null };
+
+    const orders = await this.db
+      .select()
+      .from(schema.orders)
+      .where(eq(schema.orders.sessionId, session.id));
+    const live = orders.filter((o) => o.status !== "voided");
+    const items = live.length
+      ? await this.db
+          .select()
+          .from(schema.orderItems)
+          .where(
+            inArray(
+              schema.orderItems.orderId,
+              live.map((o) => o.id),
+            ),
+          )
+      : [];
+
+    let totalSen = 0;
+    const detail = live
+      .sort((a, b) => a.placedAt - b.placedAt)
+      .map((o) => {
+        const lines = items
+          .filter((li) => li.orderId === o.id)
+          .map((li) => {
+            const modifiers = JSON.parse(li.modifiers) as Modifier[];
+            const lineSen = lineTotalSen(li.unitPriceSen, li.qty, modifiers);
+            totalSen += lineSen;
+            return {
+              nameMs: li.nameMs,
+              nameEn: li.nameEn,
+              qty: li.qty,
+              lineSen,
+              modifiers,
+              notes: li.notes,
+            };
+          });
+        return { id: o.id, placedAt: o.placedAt, status: o.status, source: o.source, lines };
+      });
+
+    return {
+      table: { id: table.id, label: table.label },
+      session: {
+        id: session.id,
+        openedAt: session.openedAt,
+        status: session.status,
+        totalSen,
+        orders: detail,
+      },
+    };
+  }
+
+  /**
+   * Close a bill and free the table.
+   *
+   * Phase 6 fronts this with payment recording; the primitive itself stays.
+   * Closing without payment is audit-logged so nothing disappears quietly.
+   */
+  async closeSession(input: {
+    sessionId: string;
+    userId?: string;
+  }): Promise<{ ok: true } | { ok: false; error: "not_found" }> {
+    const session = (
+      await this.db
+        .select()
+        .from(schema.tableSessions)
+        .where(eq(schema.tableSessions.id, input.sessionId))
+        .limit(1)
+    )[0];
+    if (!session || session.status === "closed") {
+      return { ok: false, error: "not_found" };
+    }
+
+    await this.db
+      .update(schema.tableSessions)
+      .set({ status: "closed", closedAt: Date.now() })
+      .where(eq(schema.tableSessions.id, session.id));
+    await this.db
+      .update(schema.tables)
+      .set({ status: "empty" })
+      .where(eq(schema.tables.id, session.tableId));
+    await this.audit(
+      "session.closed",
+      JSON.stringify({ sessionId: session.id, tableId: session.tableId }),
+      input.userId,
+    );
+    broadcast(this.ctx, {
+      type: "session.closed",
+      tableId: session.tableId,
+      sessionId: session.id,
+    });
+    return { ok: true };
+  }
+
+  /**
+   * 86-ing. "Ayam habis" — one tap and the dish stops being orderable
+   * everywhere: new orders are refused server-side immediately, tills hear it
+   * on the socket, and phones notice the menuVersion bump on their next poll.
+   */
+  async setItemAvailability(input: {
+    itemId: string;
+    available: boolean;
+    userId?: string;
+  }): Promise<
+    { ok: true; menuVersion: number } | { ok: false; error: "not_found" }
+  > {
+    const rows = await this.db
+      .select()
+      .from(schema.menuItems)
+      .where(eq(schema.menuItems.id, input.itemId))
+      .limit(1);
+    if (!rows[0]) return { ok: false, error: "not_found" };
+
+    await this.db
+      .update(schema.menuItems)
+      .set({ isAvailable: input.available ? 1 : 0 })
+      .where(eq(schema.menuItems.id, input.itemId));
+
+    const settings = await this.getSettings();
+    const menuVersion = (settings.menuVersion ?? 1) + 1;
+    await this.db
+      .update(schema.settings)
+      .set({ menuVersion, updatedAt: Date.now() })
+      .where(eq(schema.settings.id, 1));
+
+    await this.audit(
+      "item.availability",
+      JSON.stringify({ itemId: input.itemId, available: input.available }),
+      input.userId,
+    );
+    broadcast(this.ctx, {
+      type: "item.availability",
+      itemId: input.itemId,
+      available: input.available,
+      menuVersion,
+    });
+    return { ok: true, menuVersion };
+  }
+
+  /**
+   * The customer's status poll: cheap enough to call every ~12 seconds.
+   * Carries menuVersion so an idle phone learns to refetch a changed menu.
+   */
+  async getStatus(token: string) {
+    const table = await this.resolveTable(token);
+    if (!table) return null;
+
+    const settings = await this.getSettings();
+    const detail = await this.getSessionDetail(table.id);
+    return {
+      menuVersion: settings.menuVersion ?? 1,
+      table: { label: table.label, status: table.status },
+      session: detail?.session
+        ? {
+            status: detail.session.status,
+            totalSen: detail.session.totalSen,
+            orders: detail.session.orders.map((o) => ({
+              id: o.id,
+              status: o.status,
+              placedAt: o.placedAt,
+              lines: o.lines.map((l) => ({
+                nameMs: l.nameMs,
+                nameEn: l.nameEn,
+                qty: l.qty,
+              })),
+            })),
+          }
+        : null,
+    };
   }
 
   /** Total taken today, for the nightly rollup into D1. */

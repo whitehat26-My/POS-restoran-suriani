@@ -582,13 +582,18 @@ app.post("/api/outlets/:outletId/orders", async (c) => {
   if (!handle) return c.json({ error: "not found" }, 404);
 
   const body = await c.req.json<{
-    qrToken: string;
+    qrToken?: string;
+    tableId?: string;
     lines: PlaceOrderLine[];
     clientUlid?: string;
   }>();
+  if (!body.qrToken && !body.tableId) {
+    return c.json({ error: "qrToken or tableId required" }, 400);
+  }
 
   const result = await handle.stub.placeOrder({
     qrToken: body.qrToken,
+    tableId: body.tableId,
     lines: body.lines,
     clientUlid: body.clientUlid,
     source: "counter",
@@ -601,6 +606,113 @@ app.post("/api/outlets/:outletId/orders", async (c) => {
     return c.json({ error: result.error, detail: result.detail }, 400);
   }
   return c.json(result.order, result.order.duplicate ? 200 : 201);
+});
+
+/* ------------------------------------------------------------------ *
+ * The till — floor, bills, service lifecycle, realtime
+ * ------------------------------------------------------------------ */
+
+/**
+ * Live events. The upgrade rides the session cookie through the same
+ * middleware and tenant door as every staff route, then is forwarded to the
+ * outlet's Durable Object, which owns the sockets.
+ */
+app.get("/api/outlets/:outletId/ws", async (c) => {
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  if (c.req.header("Upgrade")?.toLowerCase() !== "websocket") {
+    return c.json({ error: "expected websocket upgrade" }, 426);
+  }
+  return handle.stub.fetch(c.req.raw);
+});
+
+app.get("/api/outlets/:outletId/floor", async (c) => {
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  const [zones, tables] = await Promise.all([
+    handle.stub.listZones(),
+    handle.stub.getFloor(),
+  ]);
+  return c.json({ zones, tables });
+});
+
+/** The bill sheet for one table. */
+app.get("/api/outlets/:outletId/tables/:tableId/bill", async (c) => {
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  const detail = await handle.stub.getSessionDetail(c.req.param("tableId"));
+  if (!detail) return c.json({ error: "not found" }, 404);
+  return c.json(detail);
+});
+
+app.post("/api/outlets/:outletId/orders/:orderId/served", async (c) => {
+  const session = c.get("session");
+  const handle = await getOutletForSession(
+    c.env,
+    session,
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  const result = await handle.stub.markOrderServed({
+    orderId: c.req.param("orderId"),
+    userId: session.userId,
+  });
+  if (!result.ok) return c.json({ error: "not found" }, 404);
+  return c.json({ ok: true });
+});
+
+/**
+ * Close a bill and free the table. Phase 6 fronts this with payment
+ * recording; until then closing is audit-logged, never silent.
+ */
+app.post("/api/outlets/:outletId/sessions/:sessionId/close", async (c) => {
+  const session = c.get("session");
+  const handle = await getOutletForSession(
+    c.env,
+    session,
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  const result = await handle.stub.closeSession({
+    sessionId: c.req.param("sessionId"),
+    userId: session.userId,
+  });
+  if (!result.ok) return c.json({ error: "not found" }, 404);
+  return c.json({ ok: true });
+});
+
+/** 86-ing. Any staff role: it is the cashier who sees the empty pot. */
+app.patch("/api/outlets/:outletId/items/:itemId/availability", async (c) => {
+  const session = c.get("session");
+  const handle = await getOutletForSession(
+    c.env,
+    session,
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  const body = await c.req.json<{ available?: boolean }>();
+  if (typeof body.available !== "boolean") {
+    return c.json({ error: "available (boolean) required" }, 400);
+  }
+  const result = await handle.stub.setItemAvailability({
+    itemId: c.req.param("itemId"),
+    available: body.available,
+    userId: session.userId,
+  });
+  if (!result.ok) return c.json({ error: "not found" }, 404);
+  return c.json(result);
 });
 
 /* ------------------------------------------------------------------ *
@@ -652,6 +764,36 @@ app.post("/api/t/:outletId/:qrToken/orders", async (c) => {
     return c.json({ error: result.error, detail: result.detail }, 400);
   }
   return c.json(result.order, result.order.duplicate ? 200 : 201);
+});
+
+/** The status poll driving the Diterima → Dimasak → Dihidang track. */
+app.get("/api/t/:outletId/:qrToken/status", async (c) => {
+  const handle = await getPublicOutlet(c.env, c.req.param("outletId"));
+  if (!handle) return c.json({ error: "not found" }, 404);
+  const status = await handle.stub.getStatus(c.req.param("qrToken"));
+  if (!status) return c.json({ error: "not found" }, 404);
+  return c.json(status);
+});
+
+app.post("/api/t/:outletId/:qrToken/bill-request", async (c) => {
+  const handle = await getPublicOutlet(c.env, c.req.param("outletId"));
+  if (!handle) return c.json({ error: "not found" }, 404);
+  const result = await handle.stub.requestBill(c.req.param("qrToken"));
+  if (!result.ok) {
+    if (result.error === "unknown_table") {
+      return c.json({ error: "not found" }, 404);
+    }
+    return c.json({ error: result.error }, 400);
+  }
+  return c.json(result);
+});
+
+app.post("/api/t/:outletId/:qrToken/call-waiter", async (c) => {
+  const handle = await getPublicOutlet(c.env, c.req.param("outletId"));
+  if (!handle) return c.json({ error: "not found" }, 404);
+  const result = await handle.stub.callWaiter(c.req.param("qrToken"));
+  if (!result.ok) return c.json({ error: "not found" }, 404);
+  return c.json(result);
 });
 
 export default app;

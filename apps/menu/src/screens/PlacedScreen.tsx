@@ -1,7 +1,6 @@
-import { formatMYR } from "@suriani/core/money";
-
 import type { Lang, Key } from "../i18n";
 import type { PlacedSummary } from "../cart";
+import { StatusCard } from "../StatusCard";
 
 /**
  * Static confirmation. The track sits at "Diterima" — it starts moving on its
@@ -11,15 +10,24 @@ import type { PlacedSummary } from "../cart";
 export function PlacedScreen({
   t,
   placed,
+  stage,
+  billRequested,
+  waiterCalled,
+  onBill,
+  onWaiter,
   onMore,
 }: {
   t: (k: Key) => string;
   lang: Lang;
   placed: PlacedSummary[];
+  stage: 1 | 2 | 3;
+  billRequested: boolean;
+  waiterCalled: boolean;
+  onBill: () => void;
+  onWaiter: () => void;
   onMore: () => void;
 }) {
   const latest = placed[placed.length - 1];
-  const sessionTotal = placed.reduce((s, o) => s + o.totalSen, 0);
 
   return (
     <div className="scroll">
@@ -30,39 +38,15 @@ export function PlacedScreen({
       </div>
 
       {latest && (
-        <div className="status-card">
-          <div className="status-head">
-            <strong>{t("st_title")}</strong>
-            <span className="status-eta num">
-              {t("st_eta")} {latest.etaMin} {t("min")}
-            </span>
-          </div>
-          <div className="track">
-            <span className="now" />
-            <span />
-            <span />
-          </div>
-          <div className="track-labels">
-            <span>{t("st_1")}</span>
-            <span>{t("st_2")}</span>
-            <span>{t("st_3")}</span>
-          </div>
-          <div className="status-items">
-            {placed.flatMap((o) =>
-              o.lines.map((l, i) => (
-                <div className="status-item" key={`${o.orderId}_${i}`}>
-                  <span>
-                    {l.qty}× {l.name}
-                  </span>
-                </div>
-              )),
-            )}
-            <div className="status-item">
-              <span>{t("total")}</span>
-              <span className="num">{formatMYR(sessionTotal)}</span>
-            </div>
-          </div>
-        </div>
+        <StatusCard
+          t={t}
+          placed={placed}
+          stage={stage}
+          billRequested={billRequested}
+          waiterCalled={waiterCalled}
+          onBill={onBill}
+          onWaiter={onWaiter}
+        />
       )}
 
       <div className="page">
