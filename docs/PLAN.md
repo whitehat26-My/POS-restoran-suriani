@@ -755,30 +755,73 @@ QR encoding needs a pure-JS library that runs in Workers (no canvas, no native d
 **Goal:** the customer surface becomes real. Someone scans the QR on a table, orders from their own
 phone, and it lands in that outlet's Durable Object and nowhere else.
 
-Phase 0 designed this screen and Phase 1 built the API it talks to. Phase 2 joins them.
+Phase 0 designed this screen, Phase 1 built the API, Phase 2a made the tables real. This joins them.
 
-### Four decisions worth stating
+### 🔴 First: close a price-trust hole already in shipped code
 
-1. **One Worker serves both the app and the API**, using Workers static assets. Same origin, so no
-   CORS, no second deployment, and no chance of the two drifting apart in production.
-2. **The route split has to change, and now is the cheapest time.** `/t/:outletId/:qrToken`
-   currently returns JSON, but that is the URL printed on the table card — it must serve HTML to a
-   human. Customer data endpoints move to `/api/t/:outletId/:qrToken`. Breaking, and nothing depends
-   on it yet.
-3. **The cart lives on the phone**, in `localStorage` keyed by the table token. A customer who loses
-   signal mid-order, locks their phone, or reloads must not lose what they picked. This is the
-   single most visible reliability difference between this and a naive QR menu.
-4. **The client mints the order ULID before its first attempt** and reuses it on every retry. The
-   server already deduplicates, so a flaky tap on "Hantar Pesanan" cannot produce two orders — the
-   same property that makes Phase 5's offline replay safe, exercised early.
+`OutletDO.placeOrder` computes a line total as
+`lineTotalSen(item.priceSen, line.qty, line.modifiers)` — where `line.modifiers` comes **straight
+from the request body**, carrying its own `priceDeltaSen`. The customer ordering endpoint is public,
+so today this works:
+
+```json
+{ "lines": [{ "menuItemId": "itm_nasilemak", "qty": 1,
+              "modifiers": [{ "label": "Diskaun", "priceDeltaSen": -1000 }] }] }
+```
+
+The customer sets their own price. Nothing sends modifiers yet, so it is unexploited — but it is
+live, and it is exactly the mistake that snapshotting `unit_price_sen` from the menu exists to
+prevent. Half the rule was applied and half was not.
+
+**The fix, which is also the feature:** modifier options are defined server-side per menu item, and
+the client sends only **option ids**. The server looks up each label and price delta from its own
+database. A price never arrives from a phone.
+
+This is why "add modifiers" is not a nice-to-have here — the safe design and the useful feature are
+the same piece of work.
+
+### Migration v3 — modifier definitions
+
+```
+modifier_groups   id, menu_item_id, name_ms, name_en,
+                  min_select, max_select, sort_order
+modifier_options  id, group_id, label_ms, label_en, price_delta_sen, sort_order
+```
+
+Server-side validation on every order line: each referenced option must belong to a group belonging
+to that menu item, and each group's `min_select`/`max_select` must be satisfied. `order_items.modifiers`
+keeps storing the **resolved snapshot** (label + price at time of order), so a reprinted ticket or a
+month-old bill still reads correctly even after the options change.
+
+Seed data gains the obvious Malaysian cases: Teh Tarik *panas / ais*, Nasi Lemak *tambah telur,
+tambah ayam*, Mee Goreng *kurang pedas*.
+
+### Decisions taken
+
+1. **One Worker serves both the app and the API**, via Workers static assets. Same origin, no CORS,
+   one deployment, no chance of the two drifting apart in production.
+2. **The route split changes now, while it is cheap.** `/t/:outletId/:qrToken` currently returns
+   JSON, but it is the URL printed on the table cards Phase 2a generates — it must serve HTML to a
+   human. Data moves to `/api/t/:outletId/:qrToken`. This touches **four** test files
+   (`isolation`, `onboarding`, `tables`, `orders`), not two.
+3. **Cart lives on the phone** in `localStorage`, keyed by the table token, and a service worker
+   caches the menu — so losing signal mid-meal neither blanks the page nor loses the cart. This is
+   the customer-side half of the offline promise the whole product is built on.
+4. **The client mints the order ULID before its first attempt** and reuses it on retry. The server
+   already deduplicates, so a flaky tap cannot double-order — the same property Phase 5's offline
+   replay depends on, exercised early.
+5. **Ordering only.** *Minta Bil* and *Panggil Pelayan* need a cashier screen to ring on; they land
+   in Phase 3 with the POS.
+6. **Static confirmation**, showing the order, the total, and an ETA derived from `prep_minutes`.
+   It does not animate on its own until Phase 3 has something real to report.
 
 ### New package: `apps/menu`
 
 Vite + React + TypeScript, consuming `design/tokens.css` unchanged.
 
-Reused directly from the Phase 0 prototype, which was the specification: the dish SVG art, the
-translation-layer shape, the category rail, the morphing cart bar, and every design token. Nothing
-about the look is redesigned here — it is the approved design, made real.
+Reused directly from the Phase 0 prototype, which was the specification: the enamel-plate dish SVGs,
+the translation-layer shape, the category rail, the morphing cart bar, every token. The look is not
+redesigned here — it is the approved design, made real.
 
 ```
 apps/menu/src/
@@ -787,38 +830,46 @@ apps/menu/src/
   cart.ts        cart state, localStorage persistence, sen arithmetic
   i18n.ts        BM/EN dictionary — same shape as the prototype
   art.tsx        the enamel-plate dish illustrations
-  screens/       Menu · Cart · OrderPlaced · TableNotFound
+  screens/       Menu · ItemSheet (modifiers) · Cart · OrderPlaced · TableNotFound
 ```
 
 ### Files to change
 
-`apps/api/src/index.ts` (move customer routes under `/api/t/...`, add SPA fallback) ·
-`apps/api/wrangler.jsonc` (assets binding) · `apps/api/test/isolation.test.ts` and
-`onboarding.test.ts` (updated paths) · `pnpm-workspace.yaml` (already globs `apps/*`)
+`apps/api/src/outlet/migrations.ts` (v3) · `apps/api/src/outlet/schema.ts` ·
+`apps/api/src/outlet/OutletDO.ts` (server-side modifier resolution — the security fix) ·
+`apps/api/src/index.ts` (route move, SPA fallback) · `apps/api/wrangler.jsonc` (assets binding) ·
+`apps/api/src/seed-data.ts` (modifier groups) · the four test files above.
 
-Reuse rather than rewrite: `lineTotalSen`/`formatMYR` from `apps/api/src/lib/money.ts` and `ulid`
-from `apps/api/src/lib/ids.ts` — extract both into a shared `packages/core` rather than copying,
-because a second implementation of money arithmetic is exactly how the two drift.
+Reuse rather than rewrite: `lineTotalSen`/`formatMYR` from `apps/api/src/lib/money.ts`, `ulid` from
+`apps/api/src/lib/ids.ts`, and `batchForSql` from `apps/api/src/lib/chunk.ts` — extract the shared
+ones into `packages/core` rather than copying, because a second implementation of money arithmetic
+is precisely how the two drift apart.
 
-### Explicitly not in Phase 2
+### Explicitly not in Phase 2b
 
-Live order status over WebSockets (Phase 3), printing (Phase 4), payments (Phase 6). The status card
-shows what the placement response returned; it does not yet update by itself.
+Live status over WebSockets (Phase 3), printing (Phase 4), bill requests and waiter calls (Phase 3),
+payments and split bills (Phase 6).
 
 ### Verification
 
-1. **Playwright against `wrangler dev`**, the whole path a customer takes: seed → open a real table
-   QR URL → toggle to English → add two items → place the order → assert 201, cart cleared, status
-   card shown.
-2. **Cross-outlet** — place at Kampung Baru, then assert through the staff API that Bangi still has
-   zero orders. The Phase 1 guarantee, re-proven from the customer surface.
-3. **Cart survival** — add items, reload the page, cart is still there.
-4. **Double submit** — tap "Hantar Pesanan" twice with the same ULID; exactly one order exists.
-5. **Unknown or stale token** — a clear "meja tidak dijumpai" screen in both languages, never a
-   stack trace or an empty page.
-6. **The 24 existing tests stay green** after the route move.
-7. **Weight budget** — the menu must be interactive fast on a throttled 3G profile, because it is
-   opened on a stranger's phone in a restaurant with bad signal.
+1. **The price-trust regression test, and it must fail without the fix.** Post an order with a
+   forged `priceDeltaSen: -1000` and with an option id belonging to a *different* menu item; both
+   must be rejected, and the recorded total must match the server's own prices.
+2. **Modifier rules** — a group with `min_select: 1` rejects an order that omits it; `max_select`
+   rejects too many; a valid selection prices correctly and the snapshot survives a later price edit.
+3. **Playwright against `wrangler dev`**, the path a customer actually takes: seed → open a real
+   table QR URL → toggle to English → pick a dish with options → add two items → order → assert 201,
+   cart cleared, confirmation shown.
+4. **Cross-outlet** — order at Kampung Baru, assert via the staff API that Bangi still has zero.
+   The Phase 1 guarantee, re-proven from the customer surface.
+5. **Cart survival** — add items, reload, cart intact. Then go offline and confirm the menu still
+   renders from cache rather than blanking.
+6. **Double submit** — same ULID twice; exactly one order.
+7. **Unknown, stale or rotated token** — a clear "meja tidak dijumpai" screen in both languages,
+   never a stack trace or a blank page.
+8. **All 37 existing tests stay green** after the route move.
+9. **Weight budget** on a throttled 3G profile — this is opened on a stranger's phone in a shop with
+   bad signal, and a slow first paint is the whole product's first impression.
 
 ---
 

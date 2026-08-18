@@ -4,7 +4,11 @@
  * Prices are integer sen. Two branches share this master menu; per-outlet
  * price and availability overrides arrive in Phase 7.
  */
-import type { SeedCategory, SeedItem } from "./outlet/OutletDO";
+import type {
+  SeedCategory,
+  SeedItem,
+  SeedModifierGroup,
+} from "./outlet/OutletDO";
 
 export const SEED_CATEGORIES: SeedCategory[] = [
   { id: "cat_nasi", nameMs: "Nasi", nameEn: "Rice", sortOrder: 0 },
@@ -109,6 +113,59 @@ export const SEED_ITEMS: SeedItem[] = [
     descEn: "Palm sugar, thick coconut milk",
     priceSen: 650,
     prepMinutes: 5,
+  },
+];
+
+/**
+ * The options a Malaysian menu cannot really ship without. Prices live here,
+ * server-side — the phone only ever sends the option ids.
+ */
+export const SEED_MODIFIER_GROUPS: SeedModifierGroup[] = [
+  {
+    id: "mg_tehtarik_suhu",
+    menuItemId: "itm_tehtarik",
+    nameMs: "Panas atau ais?",
+    nameEn: "Hot or iced?",
+    minSelect: 1,
+    maxSelect: 1,
+    options: [
+      { id: "mo_teh_panas", labelMs: "Panas", labelEn: "Hot" },
+      { id: "mo_teh_ais", labelMs: "Ais", labelEn: "Iced", priceDeltaSen: 50 },
+    ],
+  },
+  {
+    id: "mg_nasilemak_tambah",
+    menuItemId: "itm_nasilemak",
+    nameMs: "Tambah",
+    nameEn: "Extras",
+    minSelect: 0,
+    maxSelect: 2,
+    options: [
+      {
+        id: "mo_nl_telur",
+        labelMs: "Tambah telur",
+        labelEn: "Extra egg",
+        priceDeltaSen: 150,
+      },
+      {
+        id: "mo_nl_ayam",
+        labelMs: "Tambah ayam",
+        labelEn: "Extra chicken",
+        priceDeltaSen: 450,
+      },
+    ],
+  },
+  {
+    id: "mg_meegoreng_pedas",
+    menuItemId: "itm_meegoreng",
+    nameMs: "Tahap pedas",
+    nameEn: "Spice level",
+    minSelect: 0,
+    maxSelect: 1,
+    options: [
+      { id: "mo_mg_kurang", labelMs: "Kurang pedas", labelEn: "Less spicy" },
+      { id: "mo_mg_extra", labelMs: "Extra pedas", labelEn: "Extra spicy" },
+    ],
   },
 ];
 

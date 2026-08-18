@@ -35,6 +35,11 @@ jobs:
       - name: Guard tenant isolation boundary
         run: pnpm --filter @suriani/api guard
 
+      # Builds the customer app (its own tsc runs inside), so the Worker's
+      # assets directory is real rather than the test stub.
+      - name: Build customer app
+        run: pnpm --filter @suriani/menu build
+
       - name: Typecheck
         run: pnpm typecheck
 

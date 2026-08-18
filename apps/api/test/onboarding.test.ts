@@ -58,7 +58,8 @@ describe("onboarding", () => {
 
     // The QR printed for Meja 01 must actually open a menu.
     const menu = await SELF.fetch(
-      `https://api.test${body.outlets[0]!.sampleQrPath}`,
+      // sampleQrPath is the printed human URL (/t/...); its data lives at /api/t/...
+      `https://api.test/api${body.outlets[0]!.sampleQrPath}`,
     );
     expect(menu.status).toBe(200);
 
@@ -94,7 +95,7 @@ describe("onboarding", () => {
 
     // Order at Kampung Baru only.
     const placed = await SELF.fetch(
-      `https://api.test${kampungBaru.sampleQrPath}/orders`,
+      `https://api.test/api${kampungBaru.sampleQrPath}/orders`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

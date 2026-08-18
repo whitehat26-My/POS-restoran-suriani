@@ -54,8 +54,9 @@ describe("migration v2 upgrades an outlet that already has data", () => {
 
       // Now upgrade.
       const version = runMigrations(sql);
+      // Always the latest — this test rewinds to v1 and must land wherever
+      // the runner currently tops out, not at a hardcoded number.
       expect(version).toBe(TARGET_VERSION);
-      expect(version).toBe(2);
 
       // Nothing was lost.
       const tables = [
@@ -215,7 +216,7 @@ describe("rotating a QR", () => {
 
     // The old card still works right up until the rotation.
     expect(
-      (await SELF.fetch(`https://api.test/t/${a.outletId}/${a.qrToken}`)).status,
+      (await SELF.fetch(`https://api.test/api/t/${a.outletId}/${a.qrToken}`)).status,
     ).toBe(200);
 
     const rotated = await SELF.fetch(rotateUrl, {
@@ -228,10 +229,10 @@ describe("rotating a QR", () => {
 
     // Old token dead, new token alive.
     expect(
-      (await SELF.fetch(`https://api.test/t/${a.outletId}/${a.qrToken}`)).status,
+      (await SELF.fetch(`https://api.test/api/t/${a.outletId}/${a.qrToken}`)).status,
     ).toBe(404);
     expect(
-      (await SELF.fetch(`https://api.test/t/${a.outletId}/${fresh}`)).status,
+      (await SELF.fetch(`https://api.test/api/t/${a.outletId}/${fresh}`)).status,
     ).toBe(200);
   });
 });
@@ -241,7 +242,7 @@ describe("archiving a table", () => {
     const a = await createTenant("Suriani");
 
     // Open a bill by ordering.
-    await SELF.fetch(`https://api.test/t/${a.outletId}/${a.qrToken}/orders`, {
+    await SELF.fetch(`https://api.test/api/t/${a.outletId}/${a.qrToken}/orders`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lines: [{ menuItemId: a.itemId, qty: 1 }] }),
@@ -280,7 +281,7 @@ describe("archiving a table", () => {
     const table = created.tables[0]!;
 
     await SELF.fetch(
-      `https://api.test/t/${a.outletId}/${table.qrToken}/orders`,
+      `https://api.test/api/t/${a.outletId}/${table.qrToken}/orders`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -314,7 +315,7 @@ describe("archiving a table", () => {
 
     // ...its QR is dead, so a pocketed card cannot keep ordering...
     expect(
-      (await SELF.fetch(`https://api.test/t/${a.outletId}/${table.qrToken}`))
+      (await SELF.fetch(`https://api.test/api/t/${a.outletId}/${table.qrToken}`))
         .status,
     ).toBe(404);
 

@@ -165,6 +165,35 @@ export const MIGRATIONS: Migration[] = [
       `INSERT INTO settings (id, updated_at) VALUES (1, 0)`,
     ],
   },
+  {
+    // Modifier definitions — "tambah telur", "panas / ais", "kurang pedas".
+    //
+    // These exist so the server can price an option itself. Before this, a
+    // modifier's price delta arrived in the request body, which meant the
+    // customer chose it. Options live here; the phone sends only their ids.
+    version: 3,
+    statements: [
+      `CREATE TABLE modifier_groups (
+        id TEXT PRIMARY KEY,
+        menu_item_id TEXT NOT NULL,
+        name_ms TEXT NOT NULL,
+        name_en TEXT NOT NULL,
+        min_select INTEGER NOT NULL DEFAULT 0,
+        max_select INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )`,
+      `CREATE INDEX idx_modifier_groups_item ON modifier_groups (menu_item_id)`,
+      `CREATE TABLE modifier_options (
+        id TEXT PRIMARY KEY,
+        group_id TEXT NOT NULL,
+        label_ms TEXT NOT NULL,
+        label_en TEXT NOT NULL,
+        price_delta_sen INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )`,
+      `CREATE INDEX idx_modifier_options_group ON modifier_options (group_id)`,
+    ],
+  },
 ];
 
 /** Highest version this build knows how to migrate to. */

@@ -41,6 +41,41 @@ export const menuItems = sqliteTable(
   (t) => [index("idx_items_category").on(t.categoryId)],
 );
 
+/**
+ * The options a dish offers — "Panas atau ais?", "Tambah telur".
+ *
+ * These live server-side for one reason above all: the price of an option is
+ * the restaurant's to decide. The phone sends option ids and nothing else.
+ */
+export const modifierGroups = sqliteTable(
+  "modifier_groups",
+  {
+    id: text("id").primaryKey(),
+    menuItemId: text("menu_item_id").notNull(),
+    nameMs: text("name_ms").notNull(),
+    nameEn: text("name_en").notNull(),
+    /** 1 forces a choice, e.g. hot or iced. */
+    minSelect: integer("min_select").notNull().default(0),
+    maxSelect: integer("max_select").notNull().default(1),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [index("idx_modifier_groups_item").on(t.menuItemId)],
+);
+
+export const modifierOptions = sqliteTable(
+  "modifier_options",
+  {
+    id: text("id").primaryKey(),
+    groupId: text("group_id").notNull(),
+    labelMs: text("label_ms").notNull(),
+    labelEn: text("label_en").notNull(),
+    /** Authoritative. Never taken from a request body. */
+    priceDeltaSen: integer("price_delta_sen").notNull().default(0),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [index("idx_modifier_options_group").on(t.groupId)],
+);
+
 /** "Dalam", "Luar", "Tingkat 2" — groups the POS floor map. */
 export const zones = sqliteTable("zones", {
   id: text("id").primaryKey(),

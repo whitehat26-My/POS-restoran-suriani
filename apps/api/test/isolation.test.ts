@@ -17,7 +17,7 @@ import { ulid } from "../src/lib/ids";
 
 async function placeOrder(tenant: Tenant, clientUlid?: string) {
   return SELF.fetch(
-    `https://api.test/t/${tenant.outletId}/${tenant.qrToken}/orders`,
+    `https://api.test/api/t/${tenant.outletId}/${tenant.qrToken}/orders`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -160,12 +160,12 @@ describe("customer QR path", () => {
 
     // B's token is real, but not at A's outlet.
     const res = await SELF.fetch(
-      `https://api.test/t/${a.outletId}/${b.qrToken}`,
+      `https://api.test/api/t/${a.outletId}/${b.qrToken}`,
     );
     expect(res.status).toBe(404);
 
     const order = await SELF.fetch(
-      `https://api.test/t/${a.outletId}/${b.qrToken}/orders`,
+      `https://api.test/api/t/${a.outletId}/${b.qrToken}/orders`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -177,14 +177,14 @@ describe("customer QR path", () => {
 
   it("rejects a guessed table token", async () => {
     const a = await createTenant("Suriani");
-    const res = await SELF.fetch(`https://api.test/t/${a.outletId}/MEJA05`);
+    const res = await SELF.fetch(`https://api.test/api/t/${a.outletId}/MEJA05`);
     expect(res.status).toBe(404);
   });
 
   it("serves the menu for a valid token without any session", async () => {
     const a = await createTenant("Suriani");
     const res = await SELF.fetch(
-      `https://api.test/t/${a.outletId}/${a.qrToken}`,
+      `https://api.test/api/t/${a.outletId}/${a.qrToken}`,
     );
     expect(res.status).toBe(200);
 

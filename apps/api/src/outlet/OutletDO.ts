@@ -52,11 +52,35 @@ export interface SeedTable {
   qrToken: string;
 }
 
+export interface SeedModifierGroup {
+  id: string;
+  menuItemId: string;
+  nameMs: string;
+  nameEn: string;
+  minSelect?: number;
+  maxSelect?: number;
+  sortOrder?: number;
+  options: {
+    id: string;
+    labelMs: string;
+    labelEn: string;
+    priceDeltaSen?: Sen;
+    sortOrder?: number;
+  }[];
+}
+
 export interface PlaceOrderLine {
   menuItemId: string;
   qty: number;
   notes?: string;
-  modifiers?: Modifier[];
+  /**
+   * Ids of the chosen options — deliberately NOT prices.
+   *
+   * The server resolves each id to its own label and price delta. A price that
+   * arrives from a phone is a price the customer picked, which is how you end
+   * up selling RM12 nasi lemak for RM2.
+   */
+  modifierOptionIds?: string[];
 }
 
 export interface PlaceOrderInput {
@@ -91,7 +115,14 @@ export type PlaceOrderResult =
   | { ok: true; order: PlacedOrder }
   | {
       ok: false;
-      error: "unknown_table" | "empty_order" | "unknown_item" | "unavailable";
+      error:
+        | "unknown_table"
+        | "empty_order"
+        | "unknown_item"
+        | "unavailable"
+        | "unknown_option"
+        | "option_required"
+        | "too_many_options";
       detail?: string;
     };
 
@@ -119,6 +150,7 @@ export class OutletDO extends DurableObject<Env> {
     categories: SeedCategory[];
     items: SeedItem[];
     tables: SeedTable[];
+    modifierGroups?: SeedModifierGroup[];
   }): Promise<{ categories: number; items: number; tables: number }> {
     for (const c of input.categories) {
       await this.db
@@ -157,6 +189,34 @@ export class OutletDO extends DurableObject<Env> {
         .onConflictDoNothing();
     }
 
+    for (const g of input.modifierGroups ?? []) {
+      await this.db
+        .insert(schema.modifierGroups)
+        .values({
+          id: g.id,
+          menuItemId: g.menuItemId,
+          nameMs: g.nameMs,
+          nameEn: g.nameEn,
+          minSelect: g.minSelect ?? 0,
+          maxSelect: g.maxSelect ?? 1,
+          sortOrder: g.sortOrder ?? 0,
+        })
+        .onConflictDoNothing();
+      for (const o of g.options) {
+        await this.db
+          .insert(schema.modifierOptions)
+          .values({
+            id: o.id,
+            groupId: g.id,
+            labelMs: o.labelMs,
+            labelEn: o.labelEn,
+            priceDeltaSen: o.priceDeltaSen ?? 0,
+            sortOrder: o.sortOrder ?? 0,
+          })
+          .onConflictDoNothing();
+      }
+    }
+
     return {
       categories: input.categories.length,
       items: input.items.length,
@@ -167,9 +227,43 @@ export class OutletDO extends DurableObject<Env> {
   async listMenu() {
     const categories = await this.db.select().from(schema.menuCategories);
     const items = await this.db.select().from(schema.menuItems);
+    const groups = await this.db.select().from(schema.modifierGroups);
+    const options = await this.db.select().from(schema.modifierOptions);
+
+    const optionsByGroup = new Map<string, typeof options>();
+    for (const o of options) {
+      const list = optionsByGroup.get(o.groupId) ?? [];
+      list.push(o);
+      optionsByGroup.set(o.groupId, list);
+    }
+    const groupsByItem = new Map<string, unknown[]>();
+    for (const g of [...groups].sort((a, b) => a.sortOrder - b.sortOrder)) {
+      const list = groupsByItem.get(g.menuItemId) ?? [];
+      list.push({
+        id: g.id,
+        nameMs: g.nameMs,
+        nameEn: g.nameEn,
+        minSelect: g.minSelect,
+        maxSelect: g.maxSelect,
+        options: (optionsByGroup.get(g.id) ?? [])
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((o) => ({
+            id: o.id,
+            labelMs: o.labelMs,
+            labelEn: o.labelEn,
+            priceDeltaSen: o.priceDeltaSen,
+          })),
+      });
+      groupsByItem.set(g.menuItemId, list);
+    }
+
     return {
       categories: categories.sort((a, b) => a.sortOrder - b.sortOrder),
-      items: items.map((i) => ({ ...i, tags: JSON.parse(i.tags) as string[] })),
+      items: items.map((i) => ({
+        ...i,
+        tags: JSON.parse(i.tags) as string[],
+        modifierGroups: groupsByItem.get(i.id) ?? [],
+      })),
     };
   }
 
@@ -636,6 +730,34 @@ export class OutletDO extends DurableObject<Env> {
       .where(inArray(schema.menuItems.id, menuIds));
     const menu = new Map(menuRows.map((m) => [m.id, m]));
 
+    // Option definitions, loaded from our own database. This is the whole
+    // point: the price of "tambah telur" is the restaurant's to decide, so it
+    // is read here rather than believed from the request body.
+    const groupRows = await this.db
+      .select()
+      .from(schema.modifierGroups)
+      .where(inArray(schema.modifierGroups.menuItemId, menuIds));
+    const optionRows = groupRows.length
+      ? await this.db
+          .select()
+          .from(schema.modifierOptions)
+          .where(
+            inArray(
+              schema.modifierOptions.groupId,
+              groupRows.map((g) => g.id),
+            ),
+          )
+      : [];
+
+    const groupById = new Map(groupRows.map((g) => [g.id, g]));
+    const optionById = new Map(optionRows.map((o) => [o.id, o]));
+    const groupsByItem = new Map<string, typeof groupRows>();
+    for (const group of groupRows) {
+      const list = groupsByItem.get(group.menuItemId) ?? [];
+      list.push(group);
+      groupsByItem.set(group.menuItemId, list);
+    }
+
     const orderId = id("ord");
     let totalSen = 0;
     const itemRows: (typeof schema.orderItems.$inferInsert)[] = [];
@@ -651,7 +773,55 @@ export class OutletDO extends DurableObject<Env> {
         return { ok: false, error: "unavailable", detail: item.nameMs };
       }
 
-      const modifiers = line.modifiers ?? [];
+      // A `modifiers` field carrying its own labels/prices is the old,
+      // client-priced shape. Only a tampered or badly outdated client sends
+      // it; refuse loudly rather than silently dropping what it asked for.
+      if ("modifiers" in (line as unknown as Record<string, unknown>)) {
+        return {
+          ok: false,
+          error: "unknown_option",
+          detail: "send modifierOptionIds; prices are not accepted from clients",
+        };
+      }
+
+      // Resolve every chosen option against this item's own groups.
+      const chosenIds = line.modifierOptionIds ?? [];
+      const modifiers: Modifier[] = [];
+      const chosenPerGroup = new Map<string, number>();
+
+      for (const optionId of chosenIds) {
+        const option = optionById.get(optionId);
+        const group = option ? groupById.get(option.groupId) : undefined;
+        // An option belonging to a different dish is as invalid as one that
+        // does not exist — otherwise a cheap dish could borrow another's
+        // discounted extras.
+        if (!option || !group || group.menuItemId !== item.id) {
+          return { ok: false, error: "unknown_option", detail: optionId };
+        }
+        chosenPerGroup.set(
+          group.id,
+          (chosenPerGroup.get(group.id) ?? 0) + 1,
+        );
+        modifiers.push({
+          label: option.labelMs,
+          priceDeltaSen: option.priceDeltaSen,
+        });
+      }
+
+      for (const group of groupsByItem.get(item.id) ?? []) {
+        const count = chosenPerGroup.get(group.id) ?? 0;
+        if (count < group.minSelect) {
+          return { ok: false, error: "option_required", detail: group.nameMs };
+        }
+        if (count > group.maxSelect) {
+          return {
+            ok: false,
+            error: "too_many_options",
+            detail: group.nameMs,
+          };
+        }
+      }
+
       totalSen += lineTotalSen(item.priceSen, line.qty, modifiers);
 
       itemRows.push({
@@ -664,6 +834,7 @@ export class OutletDO extends DurableObject<Env> {
         // Snapshot. If the price changes at 3pm, this bill does not.
         unitPriceSen: item.priceSen,
         notes: line.notes ?? null,
+        // The resolved snapshot: label and price as they were tonight.
         modifiers: JSON.stringify(modifiers),
       });
     }

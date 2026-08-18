@@ -20,7 +20,12 @@ import * as control from "./control/schema";
 import { hashPin, verifyPin } from "./auth/pin";
 import { timingSafeEqualString } from "./lib/compare";
 import { doId, id, qrToken } from "./lib/ids";
-import { SEED_CATEGORIES, SEED_ITEMS, SEED_OUTLETS } from "./seed-data";
+import {
+  SEED_CATEGORIES,
+  SEED_ITEMS,
+  SEED_MODIFIER_GROUPS,
+  SEED_OUTLETS,
+} from "./seed-data";
 import {
   createSession,
   readSessionCookie,
@@ -154,6 +159,7 @@ app.post("/api/admin/seed", async (c) => {
       categories: SEED_CATEGORIES,
       items: SEED_ITEMS,
       tables,
+      modifierGroups: SEED_MODIFIER_GROUPS,
     });
 
     created.push({
@@ -599,9 +605,13 @@ app.post("/api/outlets/:outletId/orders", async (c) => {
 
 /* ------------------------------------------------------------------ *
  * Customer routes — no session. The QR token is the authorisation.
+ *
+ * Data lives under /api/t/... — the bare /t/:outletId/:qrToken path is the
+ * URL printed on every table card, so it must serve the ordering page (the
+ * static-asset SPA fallback), never JSON.
  * ------------------------------------------------------------------ */
 
-app.get("/t/:outletId/:qrToken", async (c) => {
+app.get("/api/t/:outletId/:qrToken", async (c) => {
   const handle = await getPublicOutlet(c.env, c.req.param("outletId"));
   if (!handle) return c.json({ error: "not found" }, 404);
 
@@ -616,7 +626,7 @@ app.get("/t/:outletId/:qrToken", async (c) => {
   });
 });
 
-app.post("/t/:outletId/:qrToken/orders", async (c) => {
+app.post("/api/t/:outletId/:qrToken/orders", async (c) => {
   const handle = await getPublicOutlet(c.env, c.req.param("outletId"));
   if (!handle) return c.json({ error: "not found" }, 404);
 

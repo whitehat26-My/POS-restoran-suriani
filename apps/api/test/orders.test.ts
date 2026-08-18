@@ -51,7 +51,7 @@ describe("a big family order", () => {
     // exceeds SQLite's cap and the whole order fails — which is exactly what
     // one big table ordering for the family looks like.
     const res = await SELF.fetch(
-      `https://api.test/t/${a.outletId}/${a.qrToken}/orders`,
+      `https://api.test/api/t/${a.outletId}/${a.qrToken}/orders`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

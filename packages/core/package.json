@@ -1,0 +1,11 @@
+{
+  "name": "@suriani/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared money arithmetic and identifiers. One implementation, three consumers (API, customer app, tablet) — a second copy of money maths is exactly how totals drift.",
+  "exports": {
+    "./money": "./src/money.ts",
+    "./ids": "./src/ids.ts"
+  }
+}

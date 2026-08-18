@@ -10,14 +10,15 @@ Two branches of Restoran Suriani are customer zero.
 
 ## Status
 
-**Phase 2a complete.** A restaurant's floor plan is its own, and its QR cards print.
+**Phase 2b complete.** Customers order from their own phones.
 
 | Phase | | |
 |---|---|---|
 | 0 | Design system + clickable prototype | ✅ |
 | 1 | Cloudflare scaffold, control plane, one Durable Object per outlet, auth | ✅ |
 | 2a | Configurable tables, zones, QR rotation, printable cards | ✅ |
-| 2b | Customer QR ordering app | next |
+| 2b | Customer ordering app — menu, modifiers, cart, offline shell | ✅ |
+| 3 | Cashier POS with live orders | next |
 
 Full plan and roadmap: [`docs/PLAN.md`](docs/PLAN.md).
 
@@ -65,7 +66,7 @@ ADMIN_SEED_TOKEN=any-local-value pnpm seed
 The seed prints a working table QR URL for each branch.
 
 ```bash
-pnpm test        # 24 tests, inside the real Workers runtime
+pnpm test        # 45 tests, inside the real Workers runtime
 pnpm typecheck
 pnpm lint
 ```
@@ -96,10 +97,29 @@ apps/api/            Cloudflare Worker — API, control plane, outlet Durable Ob
   src/lib/tenant.ts  the single door to outlet data
   src/outlet/        per-outlet schema, migrations, Durable Object
   src/control/       D1 schema: orgs, users, outlets, devices, usage
-  test/              isolation · onboarding · migrations · money
+  test/              isolation · onboarding · tables · modifiers · pricing · money
+apps/menu/           customer ordering app (Vite + React), served by the same
+                     Worker as static assets; e2e/ holds the browser test
+packages/core/       shared money arithmetic and ids — one implementation for
+                     the API, the customer app, and later the tablet
 design/              tokens.css and the Phase 0 clickable prototype
 docs/PLAN.md         product plan, architecture, phasing
 ```
+
+## The customer surface
+
+`/t/<outletId>/<qrToken>` — the URL on every printed card — serves the ordering app;
+its data lives under `/api/t/...`. One Worker serves both, so they cannot drift.
+
+- **Prices never come from the phone.** Menu prices are snapshotted server-side, and
+  modifier options ("tambah telur", "panas/ais") are sent as ids that the server
+  resolves against its own tables. A forged `priceDeltaSen` in the request body is
+  rejected — there is a regression test that proves the exploit died.
+- **The cart lives in localStorage** keyed by the table token, and a service worker
+  keeps the menu readable offline. Losing signal mid-meal loses nothing.
+- **Orders are idempotent.** The client mints a ULID before its first attempt and
+  reuses it on retries, so a double tap or flaky connection cannot double-order.
+- 66 KB gzipped: fast on a stranger's phone in a shop with bad signal.
 
 ## Stack
 
@@ -119,7 +139,7 @@ Free tier covers both branches plus a few pilot restaurants; the step up is **$5
 
 ## Conventions
 
-- **All money is integer sen.** Never a float — see [`src/lib/money.ts`](apps/api/src/lib/money.ts).
+- **All money is integer sen.** Never a float — see [`packages/core/src/money.ts`](packages/core/src/money.ts).
 - **Order prices are snapshotted** onto the order line. Changing a menu price must never alter a
   bill already taken.
 - **A table's QR carries a 160-bit secret**, not its table number.

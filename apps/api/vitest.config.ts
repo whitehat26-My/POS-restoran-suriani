@@ -1,3 +1,4 @@
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { defineConfig } from "vitest/config";
 import {
   cloudflarePool,
@@ -16,6 +17,15 @@ export default defineConfig(async () => {
   const migrations = await readD1Migrations(
     new URL("./migrations", import.meta.url).pathname,
   );
+
+  // wrangler.jsonc points assets at the menu app's build output. The API tests
+  // don't exercise the SPA, but the pool refuses to start if the directory is
+  // missing — so guarantee a stub exists when the menu hasn't been built.
+  const assetsDir = new URL("../menu/dist", import.meta.url).pathname;
+  if (!existsSync(assetsDir)) {
+    mkdirSync(assetsDir, { recursive: true });
+    writeFileSync(`${assetsDir}/index.html`, "<!doctype html><title>stub</title>");
+  }
 
   const options = {
     wrangler: { configPath: "./wrangler.jsonc" },
