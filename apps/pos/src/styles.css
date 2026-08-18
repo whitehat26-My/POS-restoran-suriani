@@ -191,3 +191,19 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ---- printer alarm ----
+   A failed kitchen docket is a table that never gets its food, so this is
+   deliberately the loudest thing on the screen. */
+.dot-bad { background: var(--sambal); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sambal) 28%, transparent); animation: blink 1s infinite; }
+.print-alarm {
+  flex: none; padding: var(--s3) var(--s4);
+  background: color-mix(in srgb, var(--sambal) 24%, var(--pos-panel));
+  border-bottom: 2px solid var(--sambal);
+}
+.print-alarm-head { font-weight: 800; font-size: var(--t-sm); margin-bottom: var(--s2); }
+.print-alarm-row {
+  display: flex; align-items: center; gap: var(--s3);
+  font-size: var(--t-sm); padding: 4px 0;
+}
+.print-alarm-row .grow { flex: 1; }

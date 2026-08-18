@@ -978,6 +978,132 @@ the POS app · `batchForSql` untouched.
 
 ---
 
+## 17. Phase 4 — the print pipeline
+
+**Goal:** an order becomes paper. Server-rendered ESC/POS, a claim/ack queue any agent can drain,
+station routing, retry with backoff, and a loud alarm when the kitchen goes blind.
+
+**Gate:** placing an order produces byte-correct ESC/POS for the right station, and a failed print
+is impossible to miss on the till.
+
+### Two defects in the existing queue, fixed first
+
+1. **The payload drops modifiers and notes.** Phase 1 stores `{qty, name}` per line, so
+   "Nasi Lemak, *kurang pedas*, tambah telur" reaches the cook as "Nasi Lemak". Wrong food, and the
+   customer paid for the egg. The payload becomes the full line: name, qty, resolved modifier
+   labels, kitchen note.
+2. **`devices` has no credential.** A printer agent cannot borrow a cashier's PIN session — it runs
+   unattended on a tablet or a laptop in the back. Migration adds a hashed device token (reusing
+   `auth/pin.ts`'s PBKDF2 helpers), issued once at registration and shown once.
+
+### Rendering: ESC/POS on the server
+
+`packages/escpos` — a small, dependency-free encoder emitting `Uint8Array`: init, alignment, bold,
+double-height/width, code page (CP437; Bahasa Malaysia is plain ASCII so no diacritic risk),
+feed, full/partial cut, and the RJ11 drawer kick pulse.
+
+Rendering happens **in the Worker, not the agent**. The agent stays dumb — it moves bytes to a
+socket and reports what happened. That keeps ticket layout in one place under test, and means
+fixing a layout bug never requires touching software installed in a restaurant.
+
+**Templates** (`packages/escpos/src/templates.ts`):
+- **Kitchen docket** — table label in double-height double-width (readable at arm's length across a
+  hot kitchen), order time, items with qty, modifiers and notes indented beneath each line, **no
+  prices** (a cook does not need them and they crowd the slip), order short-code for reprints.
+- **Drinks docket** — same shape, beverage lines only.
+- **Counter receipt** — restaurant name, table, itemised with prices and modifiers, total in
+  double-height, payment method, thank-you line. Drawer kick appended for cash. Phase 6 uses this
+  unchanged.
+
+### Station routing
+
+Migration v5 adds:
+
+```
+print_stations   id, name, target (kitchen|drinks|counter), enabled, sort_order
+station_routes   station_id, category_id     ← which menu categories print where
+print_jobs       + station_id, + lease_until, + first_queued_at
+```
+
+Order placement fans out: lines are grouped by their category's station, one docket per station per
+order (**one docket per order**, as chosen — a table's whole round on one slip). A category with no
+route falls back to the default kitchen station, so a newly added category can never silently fail
+to print. Counter receipts are generated on demand, not on order placement.
+
+Seed creates Kitchen (nasi, mee) + Drinks (minuman, pencuci mulut), so both branches route sensibly
+out of the box.
+
+### Claim / ack: the protocol the agent speaks
+
+```
+POST /api/agent/register            device token issued once (staff-authed, owner|manager)
+GET  /api/agent/jobs                claim up to N queued jobs, leased 30s   → base64 ESC/POS
+POST /api/agent/jobs/:id/ack        {ok:true, transport} | {ok:false, error}
+POST /api/agent/heartbeat           printer reachability + agent version
+```
+
+Device-token authed, scoped to exactly one outlet — a stolen agent token reaches one restaurant's
+print queue and nothing else, and cannot read sales or touch bills.
+
+**Leases, not deletes.** A claimed job is leased for 30 seconds rather than removed; an agent that
+crashes mid-print releases it by expiry and another attempt happens. The alternative — delete on
+claim — loses the docket silently when the agent dies, which is precisely the failure that must
+never be quiet.
+
+### Failure: retry, then alarm
+
+Backoff at 2s/5s/15s/45s, then `status = failed`. Every transition broadcasts on the Phase 3
+socket, so the till shows a **red banner naming the table and dish** with one-tap reprint. A
+`print.stalled` event also fires when any job has been queued longer than 90 seconds — that catches
+the worse case where the agent is simply *gone* and nothing is failing, just silent.
+
+The POS gains a printer-health pill (last heartbeat, per-station reachability) beside the existing
+connection pill.
+
+### Proving it without hardware
+
+- **Golden byte tests** — rendered output asserted against expected ESC/POS byte sequences, so a
+  layout change that breaks the cut command or the drawer pulse fails CI.
+- **`tools/printer-sim`** — a Node TCP server on :9100 that accepts ESC/POS, decodes it and prints a
+  plain-text rendering of the docket to the terminal. You see the exact slip without owning a printer.
+- **`tools/print-agent`** — the real agent (Node, ~150 lines): claim → TCP `:9100` → ack, with
+  backoff. Runs against the simulator today, against a real printer the day one arrives, and is the
+  reference the Phase 5 Android implementation follows.
+
+### Files
+
+New: `packages/escpos/*` · `tools/printer-sim/*` · `tools/print-agent/*` ·
+`apps/api/src/agent/routes.ts`.
+Changed: `OutletDO.ts` (station fan-out, richer payload, claim/ack/lease, retry, stalled alarm) ·
+`migrations.ts` (v5) · `outlet/schema.ts` · `control/schema.ts` (device token) · `index.ts` ·
+`ws.ts` (print events) · `seed-data.ts` (stations) · `apps/pos` (printer health, failure banner,
+reprint).
+Reuse: `auth/pin.ts` PBKDF2 for device tokens · `broadcast()` from `ws.ts` · `batchForSql` ·
+`@suriani/core` money for receipt totals.
+
+### Verification
+
+1. **Golden bytes** — kitchen, drinks and receipt templates against expected byte arrays, including
+   cut and drawer-kick sequences.
+2. **Modifiers reach the cook** — an order with "kurang pedas" and "tambah telur" renders those
+   words on the docket. This is the Phase 1 defect; the test exists so it cannot come back.
+3. **Routing** — a mixed order (nasi + teh tarik) produces exactly two dockets, one per station,
+   each carrying only its own lines. An unrouted category still prints, at the default station.
+4. **Lease recovery** — claim a job, never ack it, advance past the lease: it becomes claimable
+   again and is not lost.
+5. **Ack idempotency** — acking twice does not double-count attempts or resurrect a done job.
+6. **Retry → failure → alarm** — repeated failure acks walk the backoff, land on `failed`, and
+   broadcast; a job left queued past 90s raises `print.stalled`.
+7. **Reprint** — re-queues from the stored line snapshot, so a reprint of last week's docket is
+   identical even after menu prices changed.
+8. **Agent isolation** — a device token for outlet A claims nothing from outlet B (404), and cannot
+   reach any staff route.
+9. **End to end against the simulator** — order on a phone → agent claims → simulator renders the
+   docket with the right table, lines and modifiers → job marked printed → till shows it printed.
+10. All 55 existing tests stay green; guard, typecheck, lint, CI clean.
+
+---
+
 _Verified against live sources: [Workers pricing & limits](https://developers.cloudflare.com/workers/platform/pricing/) ·
 [Durable Objects hibernatable WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/) ·
 [Workers limits](https://developers.cloudflare.com/workers/platform/limits/) ·

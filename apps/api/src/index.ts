@@ -17,14 +17,15 @@ import { eq } from "drizzle-orm";
 import { renderCards } from "./cards";
 
 import * as control from "./control/schema";
-import { hashPin, verifyPin } from "./auth/pin";
+import { hashPin, hashSecret, verifyPin, verifySecret } from "./auth/pin";
 import { timingSafeEqualString } from "./lib/compare";
-import { doId, id, qrToken } from "./lib/ids";
+import { doId, id, qrToken, agentSecret } from "./lib/ids";
 import {
   SEED_CATEGORIES,
   SEED_ITEMS,
   SEED_MODIFIER_GROUPS,
   SEED_OUTLETS,
+  SEED_STATIONS,
 } from "./seed-data";
 import {
   createSession,
@@ -42,7 +43,7 @@ import type { PlaceOrderLine } from "./outlet/OutletDO";
 
 export { OutletDO } from "./outlet/OutletDO";
 
-type Vars = { session: SessionPayload };
+type Vars = { session: SessionPayload; device: control.Device };
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -160,6 +161,7 @@ app.post("/api/admin/seed", async (c) => {
       items: SEED_ITEMS,
       tables,
       modifierGroups: SEED_MODIFIER_GROUPS,
+      stations: SEED_STATIONS,
     });
 
     created.push({
@@ -713,6 +715,182 @@ app.patch("/api/outlets/:outletId/items/:itemId/availability", async (c) => {
   });
   if (!result.ok) return c.json({ error: "not found" }, 404);
   return c.json(result);
+});
+
+/** Printer health for the till's pill and failure banner. */
+app.get("/api/outlets/:outletId/print/health", async (c) => {
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  return c.json(await handle.stub.printHealth());
+});
+
+app.get("/api/outlets/:outletId/print/stations", async (c) => {
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  return c.json({ stations: await handle.stub.listStations() });
+});
+
+/** Re-queue a docket. Any staff role: it is the cashier who sees paper jam. */
+app.post("/api/outlets/:outletId/print/jobs/:jobId/reprint", async (c) => {
+  const session = c.get("session");
+  const handle = await getOutletForSession(
+    c.env,
+    session,
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  const result = await handle.stub.reprintJob({
+    jobId: c.req.param("jobId"),
+    userId: session.userId,
+  });
+  if (!result.ok) return c.json({ error: "not found" }, 404);
+  return c.json({ ok: true });
+});
+
+/* ------------------------------------------------------------------ *
+ * The print agent
+ *
+ * A third trust model, distinct from staff sessions and customer QR tokens:
+ * a long-lived device credential scoped to exactly one outlet. A stolen agent
+ * token reaches one restaurant's print queue and nothing else — it cannot read
+ * sales, open a bill, or touch another branch.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Register a print agent. Staff-authed and owner/manager only, because it
+ * mints a long-lived credential. The token is returned once and never again —
+ * only its PBKDF2 hash is stored, so a database leak hands nobody a working
+ * agent.
+ */
+app.post("/api/outlets/:outletId/agents", manages, async (c) => {
+  const session = c.get("session");
+  const handle = await getOutletForSession(
+    c.env,
+    session,
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req
+    .json<{ name?: string }>()
+    .catch((): { name?: string } => ({}));
+
+  const deviceId = id("dev");
+  const secret = agentSecret();
+  const { hash, salt } = await hashSecret(secret);
+
+  const db = drizzle(c.env.DB, { schema: control });
+  await db.insert(control.devices).values({
+    id: deviceId,
+    outletId: handle.outlet.id,
+    name: body.name ?? "Print agent",
+    kind: "print_agent",
+    tokenHash: hash,
+    tokenSalt: salt,
+    createdAt: Date.now(),
+  });
+
+  // Shown once. There is no endpoint that can read it back.
+  return c.json({ deviceId, token: `${deviceId}.${secret}` }, 201);
+});
+
+/**
+ * Resolve an agent token to its device.
+ *
+ * The token is `<deviceId>.<secret>`; the device row names the one outlet it
+ * may touch, so the agent never chooses its own scope.
+ */
+async function authenticateAgent(
+  env: Env,
+  header: string | undefined,
+): Promise<control.Device | null> {
+  const token = header?.replace(/^Bearer\s+/i, "");
+  if (!token) return null;
+  const split = token.indexOf(".");
+  if (split < 1) return null;
+
+  const db = drizzle(env.DB, { schema: control });
+  const rows = await db
+    .select()
+    .from(control.devices)
+    .where(eq(control.devices.id, token.slice(0, split)))
+    .limit(1);
+
+  const device = rows[0];
+  if (!device?.tokenHash || !device.tokenSalt) return null;
+  const ok = await verifySecret(
+    token.slice(split + 1),
+    device.tokenHash,
+    device.tokenSalt,
+  );
+  return ok ? device : null;
+}
+
+app.use("/api/agent/*", async (c, next) => {
+  const device = await authenticateAgent(c.env, c.req.header("Authorization"));
+  if (!device) return c.json({ error: "unauthenticated" }, 401);
+  c.set("device", device);
+  await next();
+});
+
+/** Claim work. Leased, not removed — see OutletDO.claimPrintJobs. */
+app.get("/api/agent/jobs", async (c) => {
+  const device = c.get("device");
+  const handle = await getPublicOutlet(c.env, device.outletId);
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const jobs = await handle.stub.claimPrintJobs({
+    deviceId: device.id,
+    limit: Number(c.req.query("limit") ?? 5),
+  });
+  return c.json({ jobs });
+});
+
+app.post("/api/agent/jobs/:jobId/ack", async (c) => {
+  const device = c.get("device");
+  const handle = await getPublicOutlet(c.env, device.outletId);
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.json<{
+    ok?: boolean;
+    transport?: string;
+    error?: string;
+  }>();
+
+  const result = await handle.stub.ackPrintJob({
+    jobId: c.req.param("jobId"),
+    ok: body.ok === true,
+    transport: body.transport,
+    error: body.error,
+  });
+  if (!result.ok) return c.json({ error: "not found" }, 404);
+  return c.json(result);
+});
+
+app.post("/api/agent/heartbeat", async (c) => {
+  const device = c.get("device");
+  const body = await c.req
+    .json<{ appVersion?: string; printers?: unknown }>()
+    .catch((): { appVersion?: string; printers?: unknown } => ({}));
+
+  const db = drizzle(c.env.DB, { schema: control });
+  await db
+    .update(control.devices)
+    .set({
+      lastSeenAt: Date.now(),
+      appVersion: body.appVersion ?? null,
+      printerConfig: body.printers ? JSON.stringify(body.printers) : null,
+    })
+    .where(eq(control.devices.id, device.id));
+  return c.json({ ok: true });
 });
 
 /* ------------------------------------------------------------------ *

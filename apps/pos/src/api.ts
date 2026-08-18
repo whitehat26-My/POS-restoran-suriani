@@ -180,3 +180,28 @@ export const api = {
       body: JSON.stringify({ tableId, lines, clientUlid }),
     }).then(json<{ orderId: string; totalSen: Sen }>),
 };
+
+export interface PrintHealth {
+  queued: number;
+  failed: number;
+  stalled: boolean;
+  oldestQueuedMs: number | null;
+  recent: {
+    id: string;
+    status: string;
+    target: string;
+    tableLabel: string;
+    attempts: number;
+    lastError: string | null;
+  }[];
+}
+
+export const printApi = {
+  health: (outletId: string) =>
+    fetch(`/api/outlets/${outletId}/print/health`).then(json<PrintHealth>),
+
+  reprint: (outletId: string, jobId: string) =>
+    fetch(`/api/outlets/${outletId}/print/jobs/${jobId}/reprint`, {
+      method: "POST",
+    }).then(json<{ ok: boolean }>),
+};

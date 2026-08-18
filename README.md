@@ -10,7 +10,7 @@ Two branches of Restoran Suriani are customer zero.
 
 ## Status
 
-**Phase 3 complete.** The till is live — an order placed on a phone reaches it in ~150 ms.
+**Phase 4 complete.** Orders become paper: routed to the right station, retried, and alarmed if they fail.
 
 | Phase | | |
 |---|---|---|
@@ -19,7 +19,8 @@ Two branches of Restoran Suriani are customer zero.
 | 2a | Configurable tables, zones, QR rotation, printable cards | ✅ |
 | 2b | Customer ordering app — menu, modifiers, cart, offline shell | ✅ |
 | 3 | Cashier POS — live floor map, tickets, bills, 86-ing, Minta Bil / Panggil Pelayan | ✅ |
-| 4 | Kitchen print pipeline | next |
+| 4 | Print pipeline — ESC/POS, station routing, retry, reprint | ✅ |
+| 5 | Android POS shell — offline, dual-transport printing | next |
 
 Full plan and roadmap: [`docs/PLAN.md`](docs/PLAN.md).
 
@@ -67,7 +68,7 @@ ADMIN_SEED_TOKEN=any-local-value pnpm seed
 The seed prints a working table QR URL for each branch.
 
 ```bash
-pnpm test        # 55 tests, inside the real Workers runtime
+pnpm test        # 81 tests (13 ESC/POS golden bytes + 68 in the Workers runtime)
 pnpm typecheck
 pnpm lint
 ```
@@ -98,13 +99,17 @@ apps/api/            Cloudflare Worker — API, control plane, outlet Durable Ob
   src/lib/tenant.ts  the single door to outlet data
   src/outlet/        per-outlet schema, migrations, Durable Object
   src/control/       D1 schema: orgs, users, outlets, devices, usage
-  test/              isolation · onboarding · tables · modifiers · pricing · money
+  test/              isolation · onboarding · tables · modifiers · pricing ·
+                     realtime · printing · money
 apps/menu/           customer ordering app (Vite + React), served at /
 apps/pos/            the till (Vite + React, dark), served at /pos/
                      — both assembled into apps/api/.assets by `pnpm build:web`;
                      each app's e2e/ holds its browser test
 packages/core/       shared money arithmetic and ids — one implementation for
                      the API, the customer app, and later the tablet
+packages/escpos/     ESC/POS encoder + ticket templates, golden-byte tested
+tools/printer-sim/   a thermal printer that isn't there (TCP :9100)
+tools/print-agent/   claims jobs, prints, acks; reference for Phase 5 Android
 design/              tokens.css and the Phase 0 clickable prototype
 docs/PLAN.md         product plan, architecture, phasing
 ```
@@ -127,6 +132,33 @@ column for counter orders and 86-ing.
   per table, coalescing impatient taps.
 - Closing a bill is the primitive Phase 6's payments will front — explicit and audit-logged,
   never silent.
+
+## Printing
+
+Orders fan out to print stations by menu category — nasi to the kitchen, teh tarik to
+the drinks counter — one docket per station per order.
+
+```
+POST /api/outlets/:id/agents          register a print agent (token shown once)
+GET  /api/agent/jobs                  claim leased jobs -> base64 ESC/POS
+POST /api/agent/jobs/:id/ack          {ok:true,transport} | {ok:false,error}
+GET  /api/outlets/:id/print/health    queued / failed / stalled, for the till
+```
+
+- **The Worker renders, the agent just moves bytes.** Layout lives in `packages/escpos`
+  under golden byte tests, so fixing a docket is a deploy — never a visit to a restaurant.
+- **Jobs are leased, not deleted, on claim.** An agent that dies mid-print releases its
+  job by expiry and another attempt happens. Deleting on claim loses the docket silently.
+- **Failures retry with backoff, then alarm loudly** — a red banner naming the table with
+  one-tap reprint. A `stalled` flag catches the worse case where nothing is failing
+  because the agent is simply gone.
+- **A reprint renders from the stored snapshot**, so last week's docket is identical even
+  after prices changed, and is stamped `CETAK SEMULA` so nobody cooks it twice.
+- Agent tokens are PBKDF2-hashed and scoped to one outlet: a stolen token reaches one
+  restaurant's print queue and cannot read sales or touch a bill.
+
+No printer yet? `tools/printer-sim` listens on :9100 like a real one and renders the slip
+to your terminal; `tools/print-agent` drives it, and drives real hardware unchanged.
 
 ## The customer surface
 

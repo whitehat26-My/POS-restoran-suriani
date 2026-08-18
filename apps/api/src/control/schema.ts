@@ -70,6 +70,18 @@ export const devices = sqliteTable(
     appVersion: text("app_version"),
     /** JSON: printer IPs, Bluetooth MACs, local server port. */
     printerConfig: text("printer_config"),
+    /**
+     * PBKDF2 hash of this device's token.
+     *
+     * A print agent runs unattended on a tablet in the back; it cannot borrow
+     * a cashier's PIN session. The token is shown once at registration and
+     * only its hash is kept, so a database leak does not hand anyone a
+     * working agent credential.
+     */
+    tokenHash: text("token_hash"),
+    tokenSalt: text("token_salt"),
+    /** device | print_agent */
+    kind: text("kind").notNull().default("device"),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [index("idx_devices_outlet").on(t.outletId)],
@@ -94,3 +106,4 @@ export const usageDaily = sqliteTable(
 export type Organization = typeof organizations.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type Outlet = typeof outlets.$inferSelect;
+export type Device = typeof devices.$inferSelect;

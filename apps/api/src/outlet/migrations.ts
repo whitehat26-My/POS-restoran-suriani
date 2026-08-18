@@ -204,6 +204,35 @@ export const MIGRATIONS: Migration[] = [
       `ALTER TABLE settings ADD COLUMN menu_version INTEGER NOT NULL DEFAULT 1`,
     ],
   },
+  {
+    // Print stations and the routing that decides which slip goes where.
+    //
+    // print_jobs gains a lease rather than being deleted on claim: an agent
+    // that dies mid-print releases its job by expiry and another attempt
+    // happens. Deleting on claim would lose the docket silently, which is
+    // exactly the failure that must never be quiet.
+    version: 5,
+    statements: [
+      `CREATE TABLE print_stations (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        target TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )`,
+      `CREATE TABLE station_routes (
+        station_id TEXT NOT NULL,
+        category_id TEXT NOT NULL
+      )`,
+      `CREATE INDEX idx_station_routes_category ON station_routes (category_id)`,
+      `ALTER TABLE print_jobs ADD COLUMN station_id TEXT`,
+      `ALTER TABLE print_jobs ADD COLUMN lease_until INTEGER`,
+      `ALTER TABLE print_jobs ADD COLUMN first_queued_at INTEGER`,
+      `ALTER TABLE print_jobs ADD COLUMN next_attempt_at INTEGER NOT NULL DEFAULT 0`,
+      `CREATE INDEX idx_print_jobs_claimable ON print_jobs (status, next_attempt_at)`,
+    ],
+  },
 ];
 
 /** Highest version this build knows how to migrate to. */

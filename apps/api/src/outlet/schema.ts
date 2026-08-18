@@ -206,11 +206,46 @@ export const payments = sqliteTable(
   (t) => [index("idx_payments_session").on(t.sessionId)],
 );
 
+/** Where a slip prints. Kitchen, drinks, counter — one row each. */
+export const printStations = sqliteTable("print_stations", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  /** kitchen | drinks | counter */
+  target: text("target").notNull(),
+  enabled: integer("enabled").notNull().default(1),
+  /**
+   * The fallback. A menu category with no route still prints here, so adding
+   * a category can never silently stop food reaching the kitchen.
+   */
+  isDefault: integer("is_default").notNull().default(0),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+/** Which menu categories print at which station. */
+export const stationRoutes = sqliteTable(
+  "station_routes",
+  {
+    stationId: text("station_id").notNull(),
+    categoryId: text("category_id").notNull(),
+  },
+  (t) => [index("idx_station_routes_category").on(t.categoryId)],
+);
+
 export const printJobs = sqliteTable(
   "print_jobs",
   {
     id: text("id").primaryKey(),
     orderId: text("order_id"),
+    stationId: text("station_id"),
+    /**
+     * Claimed jobs are leased, not removed. An agent that crashes mid-print
+     * releases its job when the lease expires and another attempt happens.
+     */
+    leaseUntil: integer("lease_until"),
+    /** When this job first entered the queue — drives the stalled alarm. */
+    firstQueuedAt: integer("first_queued_at"),
+    /** Backoff gate: not claimable before this. */
+    nextAttemptAt: integer("next_attempt_at").notNull().default(0),
     /** kitchen | counter */
     target: text("target").notNull(),
     payload: text("payload").notNull(),

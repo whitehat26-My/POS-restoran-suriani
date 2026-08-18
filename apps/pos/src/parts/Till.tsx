@@ -4,6 +4,8 @@ import { ulid } from "@suriani/core/ids";
 
 import {
   api,
+  printApi,
+  type PrintHealth,
   type FloorTable,
   type MenuCategory,
   type MenuItem,
@@ -31,6 +33,7 @@ export function Till({ outlets }: { outlets: Outlet[] }) {
   const [cart, setCart] = useState<ConfiguredLine[]>([]);
   const [pickTable, setPickTable] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [printHealth, setPrintHealth] = useState<PrintHealth | null>(null);
   const toastTimer = useRef<number>(undefined);
 
   const say = useCallback((msg: string) => {
@@ -165,6 +168,15 @@ export function Till({ outlets }: { outlets: Outlet[] }) {
             );
             break;
           }
+          case "print.queued":
+          case "print.printed":
+            window.dispatchEvent(new Event("suriani:print"));
+            break;
+          case "print.failed": {
+            window.dispatchEvent(new Event("suriani:print"));
+            say(`🖨️ Cetakan GAGAL — ${event.tableLabel as string}`);
+            break;
+          }
           case "item.availability": {
             setItems((prev) =>
               prev.map((i) =>
@@ -181,6 +193,27 @@ export function Till({ outlets }: { outlets: Outlet[] }) {
     );
     return () => handle.close();
   }, [outletId, say]);
+
+  // Printer health. Polled rather than pushed because it summarises a queue
+  // rather than reporting an instant, and refreshed at once when a print
+  // event arrives so a failure never waits for the next tick.
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      printApi
+        .health(outletId)
+        .then((h) => !cancelled && setPrintHealth(h))
+        .catch(() => {});
+    void load();
+    const timer = window.setInterval(load, 15_000);
+    const onPrint = () => void load();
+    window.addEventListener("suriani:print", onPrint);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener("suriani:print", onPrint);
+    };
+  }, [outletId]);
 
   const tablesByZone = useMemo(() => {
     const map = new Map<string | null, FloorTable[]>();
@@ -249,8 +282,61 @@ export function Till({ outlets }: { outlets: Outlet[] }) {
             <span className={`dot ${live === "live" ? "dot-ok" : "dot-warn"}`} />
             {live === "live" ? "Langsung" : "Menyambung…"}
           </span>
+          {printHealth && (
+            <span className="pill">
+              <span
+                className={`dot ${
+                  printHealth.failed > 0 || printHealth.stalled
+                    ? "dot-bad"
+                    : printHealth.queued > 0
+                      ? "dot-warn"
+                      : "dot-ok"
+                }`}
+              />
+              {printHealth.failed > 0
+                ? `Pencetak: ${printHealth.failed} gagal`
+                : printHealth.stalled
+                  ? "Pencetak tersekat"
+                  : printHealth.queued > 0
+                    ? `Mencetak ${printHealth.queued}`
+                    : "Pencetak OK"}
+            </span>
+          )}
         </div>
       </div>
+
+      {printHealth && (printHealth.failed > 0 || printHealth.stalled) && (
+        <div className="print-alarm" role="alert">
+          <div className="print-alarm-head">
+            {printHealth.stalled && printHealth.failed === 0
+              ? "🖨️ Tiada cetakan keluar — periksa pencetak / ejen"
+              : "🖨️ Cetakan dapur GAGAL"}
+          </div>
+          {printHealth.recent
+            .filter((j) => j.status === "failed")
+            .slice(0, 4)
+            .map((j) => (
+              <div className="print-alarm-row" key={j.id}>
+                <span className="grow">
+                  {j.tableLabel} · {j.target}
+                  {j.lastError ? ` · ${j.lastError}` : ""}
+                </span>
+                <button
+                  className="mini mini-go"
+                  style={{ flex: "none", padding: "6px 12px" }}
+                  onClick={() =>
+                    printApi
+                      .reprint(outletId, j.id)
+                      .then(() => say("Cetak semula dihantar"))
+                      .catch(() => say("Gagal cetak semula"))
+                  }
+                >
+                  Cetak semula
+                </button>
+              </div>
+            ))}
+        </div>
+      )}
 
       <div className="body">
         <section className="col">

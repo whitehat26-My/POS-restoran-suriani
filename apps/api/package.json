@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@suriani/core": "workspace:*",
+    "@suriani/escpos": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.2",
     "qrcode-generator": "^2.0.4"

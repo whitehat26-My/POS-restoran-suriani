@@ -173,3 +173,35 @@ export const SEED_OUTLETS = [
   { name: "Suriani Kampung Baru", tables: 16 },
   { name: "Suriani Bangi", tables: 12 },
 ];
+
+/**
+ * Where each part of the menu prints.
+ *
+ * Kitchen is the default, so a category added later still reaches a printer
+ * even before anyone routes it — food failing to print silently is the one
+ * outcome this table exists to prevent.
+ */
+export const SEED_STATIONS = [
+  {
+    id: "st_kitchen",
+    name: "Dapur",
+    target: "kitchen",
+    isDefault: true,
+    sortOrder: 0,
+    categoryIds: ["cat_nasi", "cat_mee"],
+  },
+  {
+    id: "st_drinks",
+    name: "Minuman",
+    target: "drinks",
+    sortOrder: 1,
+    categoryIds: ["cat_minum", "cat_manis"],
+  },
+  {
+    id: "st_counter",
+    name: "Kaunter",
+    target: "counter",
+    sortOrder: 2,
+    categoryIds: [],
+  },
+];

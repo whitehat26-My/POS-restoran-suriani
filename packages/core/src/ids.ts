@@ -59,3 +59,11 @@ export function doId(): string {
 export function id(prefix: string): string {
   return `${prefix}_${ulid()}`;
 }
+
+/**
+ * A print agent's secret. 160 bits, same generator as table QR tokens — an
+ * unattended credential deserves at least what a table card gets.
+ */
+export function agentSecret(): string {
+  return encodeRandom(32);
+}

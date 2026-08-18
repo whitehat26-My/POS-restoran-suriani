@@ -70,6 +70,15 @@ export type OutletEvent =
       itemId: string;
       available: boolean;
       menuVersion: number;
+    }
+  | { type: "print.queued"; orderId: string | null }
+  | { type: "print.printed"; jobId: string; orderId: string | null }
+  | {
+      type: "print.failed";
+      jobId: string;
+      orderId: string | null;
+      tableLabel: string;
+      error: string;
     };
 
 /** Send to every connected till; a dead socket must never break a write. */

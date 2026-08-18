@@ -1,0 +1,19 @@
+{
+  "name": "@suriani/escpos",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ESC/POS encoding and ticket templates. Rendering happens on the server so layout stays in one tested place, and fixing a docket never means touching software installed in a restaurant.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./templates": "./src/templates.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}

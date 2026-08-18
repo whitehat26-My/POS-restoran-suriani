@@ -25,6 +25,7 @@ import { runMigrations } from "./migrations";
 import { id, qrToken, ulid } from "../lib/ids";
 import { batchForSql } from "../lib/chunk";
 import { lineTotalSen, type Modifier, type Sen } from "../lib/money";
+import { renderKitchenTicket, type TicketLine as PrintLine } from "@suriani/escpos/templates";
 import {
   broadcast,
   type FloorTable,
@@ -138,6 +139,37 @@ export type PlaceOrderResult =
         | "too_many_options";
       detail?: string;
     };
+
+/**
+ * Turn a stored job payload into ESC/POS bytes, base64 for JSON transport.
+ *
+ * Rendering from the stored snapshot (not from live menu data) is what makes a
+ * reprint of last week's docket identical even after prices changed.
+ */
+function renderJob(payloadJson: string): string {
+  const payload = JSON.parse(payloadJson) as {
+    stationName?: string;
+    tableLabel?: string;
+    orderCode?: string;
+    placedAt?: number;
+    reprint?: boolean;
+    lines?: PrintLine[];
+  };
+
+  const bytes = renderKitchenTicket({
+    outletName: "Restoran Suriani",
+    stationName: payload.stationName ?? "Dapur",
+    tableLabel: payload.tableLabel ?? "?",
+    orderCode: payload.orderCode ?? "",
+    placedAt: new Date(payload.placedAt ?? 0),
+    lines: payload.lines ?? [],
+    reprint: payload.reprint === true,
+  });
+
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
 
 export class OutletDO extends DurableObject<Env> {
   private readonly db: DrizzleSqliteDODatabase<typeof schema>;
@@ -283,6 +315,14 @@ export class OutletDO extends DurableObject<Env> {
     items: SeedItem[];
     tables: SeedTable[];
     modifierGroups?: SeedModifierGroup[];
+    stations?: {
+      id: string;
+      name: string;
+      target: string;
+      isDefault?: boolean;
+      sortOrder?: number;
+      categoryIds?: string[];
+    }[];
   }): Promise<{ categories: number; items: number; tables: number }> {
     for (const c of input.categories) {
       await this.db
@@ -345,6 +385,26 @@ export class OutletDO extends DurableObject<Env> {
             priceDeltaSen: o.priceDeltaSen ?? 0,
             sortOrder: o.sortOrder ?? 0,
           })
+          .onConflictDoNothing();
+      }
+    }
+
+    for (const station of input.stations ?? []) {
+      await this.db
+        .insert(schema.printStations)
+        .values({
+          id: station.id,
+          name: station.name,
+          target: station.target,
+          enabled: 1,
+          isDefault: station.isDefault ? 1 : 0,
+          sortOrder: station.sortOrder ?? 0,
+        })
+        .onConflictDoNothing();
+      for (const categoryId of station.categoryIds ?? []) {
+        await this.db
+          .insert(schema.stationRoutes)
+          .values({ stationId: station.id, categoryId })
           .onConflictDoNothing();
       }
     }
@@ -1012,19 +1072,23 @@ export class OutletDO extends DurableObject<Env> {
       appliedAt: now,
     });
 
-    // Phase 4 drains this queue to a real printer.
-    await this.db.insert(schema.printJobs).values({
-      id: id("pj"),
+    // Fan the order out to its stations. Lines are grouped by the station
+    // their menu category routes to, so a mixed order becomes one docket for
+    // the kitchen and one for the drinks counter — each carrying only its own
+    // lines, with modifiers and notes intact.
+    await this.queuePrintJobs({
       orderId,
-      target: "kitchen",
-      payload: JSON.stringify({
-        table: table.label,
-        lines: itemRows.map((r) => ({ qty: r.qty, name: r.nameMs })),
-        at: now,
-      }),
-      status: "queued",
-      attempts: 0,
-      createdAt: now,
+      tableLabel: table.label,
+      placedAt: now,
+      lines: itemRows.map((r) => ({
+        menuItemId: r.menuItemId,
+        qty: r.qty,
+        name: r.nameMs,
+        modifiers: (JSON.parse(r.modifiers ?? "[]") as Modifier[]).map(
+          (m) => m.label,
+        ),
+        notes: r.notes ?? null,
+      })),
     });
 
     await this.db
@@ -1138,6 +1202,321 @@ export class OutletDO extends DurableObject<Env> {
       .select()
       .from(schema.printJobs)
       .where(eq(schema.printJobs.status, "queued"));
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Printing
+   *
+   * The Worker renders ESC/POS; the agent only moves bytes to a socket and
+   * says what happened. Keeping layout server-side means fixing a docket is a
+   * deploy, not a visit to a restaurant.
+   * ---------------------------------------------------------------- */
+
+  async listStations() {
+    const rows = await this.db.select().from(schema.printStations);
+    return rows.sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  /**
+   * Group an order's lines by station and queue one docket per station.
+   *
+   * A category with no route falls back to the default station: a newly added
+   * category must never silently fail to reach a kitchen.
+   */
+  private async queuePrintJobs(input: {
+    orderId: string;
+    tableLabel: string;
+    placedAt: number;
+    lines: {
+      menuItemId: string;
+      qty: number;
+      name: string;
+      modifiers: string[];
+      notes: string | null;
+    }[];
+    reprint?: boolean;
+  }): Promise<string[]> {
+    const stations = (await this.listStations()).filter((s) => s.enabled === 1);
+    if (stations.length === 0) return [];
+
+    const fallback =
+      stations.find((s) => s.isDefault === 1) ??
+      stations.find((s) => s.target === "kitchen") ??
+      stations[0]!;
+
+    const routes = await this.db.select().from(schema.stationRoutes);
+    const stationByCategory = new Map(
+      routes.map((r) => [r.categoryId, r.stationId]),
+    );
+
+    const menuIds = input.lines.map((l) => l.menuItemId);
+    const menuRows = menuIds.length
+      ? await this.db
+          .select()
+          .from(schema.menuItems)
+          .where(inArray(schema.menuItems.id, menuIds))
+      : [];
+    const categoryByItem = new Map(menuRows.map((m) => [m.id, m.categoryId]));
+
+    const grouped = new Map<string, typeof input.lines>();
+    for (const line of input.lines) {
+      const categoryId = categoryByItem.get(line.menuItemId);
+      const stationId =
+        (categoryId ? stationByCategory.get(categoryId) : undefined) ??
+        fallback.id;
+      const list = grouped.get(stationId) ?? [];
+      list.push(line);
+      grouped.set(stationId, list);
+    }
+
+    const created: string[] = [];
+    for (const [stationId, lines] of grouped) {
+      const station = stations.find((s) => s.id === stationId) ?? fallback;
+      const jobId = id("pj");
+      await this.db.insert(schema.printJobs).values({
+        id: jobId,
+        orderId: input.orderId,
+        stationId: station.id,
+        target: station.target,
+        payload: JSON.stringify({
+          kind: "kitchen",
+          stationName: station.name,
+          tableLabel: input.tableLabel,
+          orderCode: `#${input.orderId.slice(-5).toUpperCase()}`,
+          placedAt: input.placedAt,
+          reprint: input.reprint === true,
+          lines,
+        }),
+        status: "queued",
+        attempts: 0,
+        nextAttemptAt: 0,
+        firstQueuedAt: Date.now(),
+        createdAt: Date.now(),
+      });
+      created.push(jobId);
+    }
+
+    broadcast(this.ctx, { type: "print.queued", orderId: input.orderId });
+    return created;
+  }
+
+  /**
+   * Hand an agent some work, leased.
+   *
+   * The lease is the safety property: a claimed job is not removed, so an
+   * agent that dies mid-print releases it by expiry and another attempt
+   * happens. Deleting on claim would lose the docket in silence.
+   */
+  async claimPrintJobs(input: { deviceId: string; limit?: number }) {
+    const now = Date.now();
+    const limit = Math.min(input.limit ?? 5, 20);
+
+    const all = await this.db.select().from(schema.printJobs);
+    const claimable = all
+      .filter(
+        (j) =>
+          (j.status === "queued" &&
+            j.nextAttemptAt <= now &&
+            (j.leaseUntil === null || j.leaseUntil < now)) ||
+          // A lease that expired without an ack: the agent died mid-print.
+          (j.status === "claimed" && (j.leaseUntil ?? 0) < now),
+      )
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .slice(0, limit);
+
+    const leaseUntil = now + 30_000;
+    const out: {
+      id: string;
+      target: string;
+      stationId: string | null;
+      attempts: number;
+      escposBase64: string;
+    }[] = [];
+
+    for (const job of claimable) {
+      await this.db
+        .update(schema.printJobs)
+        .set({ status: "claimed", leaseUntil })
+        .where(eq(schema.printJobs.id, job.id));
+      out.push({
+        id: job.id,
+        target: job.target,
+        stationId: job.stationId,
+        attempts: job.attempts,
+        escposBase64: renderJob(job.payload),
+      });
+    }
+
+    if (out.length) {
+      await this.ctx.storage.put(`agent_seen_${input.deviceId}`, now);
+    }
+    return out;
+  }
+
+  /**
+   * The agent reports back.
+   *
+   * Backoff on failure, then `failed` — which the till shows as a red banner.
+   * A silently failed docket is a table that never gets its food.
+   */
+  async ackPrintJob(input: {
+    jobId: string;
+    ok: boolean;
+    transport?: string;
+    error?: string;
+  }): Promise<{ ok: boolean; status: string }> {
+    const rows = await this.db
+      .select()
+      .from(schema.printJobs)
+      .where(eq(schema.printJobs.id, input.jobId))
+      .limit(1);
+    const job = rows[0];
+    if (!job) return { ok: false, status: "unknown" };
+
+    // Acking a finished job is a no-op, not a resurrection: a retrying agent
+    // must not be able to double-count attempts or reopen a printed docket.
+    if (job.status === "printed" || job.status === "failed") {
+      return { ok: true, status: job.status };
+    }
+
+    if (input.ok) {
+      await this.db
+        .update(schema.printJobs)
+        .set({
+          status: "printed",
+          transport: input.transport ?? null,
+          leaseUntil: null,
+          attempts: job.attempts + 1,
+          lastError: null,
+        })
+        .where(eq(schema.printJobs.id, job.id));
+      broadcast(this.ctx, {
+        type: "print.printed",
+        jobId: job.id,
+        orderId: job.orderId,
+      });
+      return { ok: true, status: "printed" };
+    }
+
+    const attempts = job.attempts + 1;
+    const backoff = [2_000, 5_000, 15_000, 45_000];
+    const giveUp = attempts > backoff.length;
+
+    await this.db
+      .update(schema.printJobs)
+      .set({
+        status: giveUp ? "failed" : "queued",
+        attempts,
+        lastError: input.error ?? "unknown",
+        leaseUntil: null,
+        nextAttemptAt: giveUp
+          ? 0
+          : Date.now() + (backoff[attempts - 1] ?? 45_000),
+      })
+      .where(eq(schema.printJobs.id, job.id));
+
+    if (giveUp) {
+      const payload = JSON.parse(job.payload) as { tableLabel?: string };
+      broadcast(this.ctx, {
+        type: "print.failed",
+        jobId: job.id,
+        orderId: job.orderId,
+        tableLabel: payload.tableLabel ?? "?",
+        error: input.error ?? "unknown",
+      });
+    }
+    return { ok: true, status: giveUp ? "failed" : "queued" };
+  }
+
+  /** Re-queue a docket, marked so nobody cooks it twice. */
+  async reprintJob(input: {
+    jobId: string;
+    userId?: string;
+  }): Promise<{ ok: boolean }> {
+    const rows = await this.db
+      .select()
+      .from(schema.printJobs)
+      .where(eq(schema.printJobs.id, input.jobId))
+      .limit(1);
+    const job = rows[0];
+    if (!job) return { ok: false };
+
+    // Re-queued from the stored snapshot, so a reprint of last week's docket
+    // is identical even after menu prices changed.
+    const payload = JSON.parse(job.payload) as Record<string, unknown>;
+    payload.reprint = true;
+
+    await this.db.insert(schema.printJobs).values({
+      id: id("pj"),
+      orderId: job.orderId,
+      stationId: job.stationId,
+      target: job.target,
+      payload: JSON.stringify(payload),
+      status: "queued",
+      attempts: 0,
+      nextAttemptAt: 0,
+      firstQueuedAt: Date.now(),
+      createdAt: Date.now(),
+    });
+    await this.audit(
+      "print.reprint",
+      JSON.stringify({ jobId: job.id }),
+      input.userId,
+    );
+    broadcast(this.ctx, { type: "print.queued", orderId: job.orderId });
+    return { ok: true };
+  }
+
+  /**
+   * Printer health for the till's pill.
+   *
+   * `stalled` catches the case retries cannot: the agent is simply gone, so
+   * nothing is failing — jobs just sit there. Silence is the dangerous state.
+   */
+  async printHealth(): Promise<{
+    queued: number;
+    failed: number;
+    stalled: boolean;
+    oldestQueuedMs: number | null;
+    recent: {
+      id: string;
+      status: string;
+      target: string;
+      tableLabel: string;
+      attempts: number;
+      lastError: string | null;
+    }[];
+  }> {
+    const now = Date.now();
+    const jobs = await this.db.select().from(schema.printJobs);
+    const queued = jobs.filter(
+      (j) => j.status === "queued" || j.status === "claimed",
+    );
+    const failed = jobs.filter((j) => j.status === "failed");
+
+    const oldest = queued.reduce<number | null>((min, j) => {
+      const age = now - (j.firstQueuedAt ?? j.createdAt);
+      return min === null || age > min ? age : min;
+    }, null);
+
+    return {
+      queued: queued.length,
+      failed: failed.length,
+      stalled: oldest !== null && oldest > 90_000,
+      oldestQueuedMs: oldest,
+      recent: [...failed, ...queued]
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, 20)
+        .map((j) => ({
+          id: j.id,
+          status: j.status,
+          target: j.target,
+          tableLabel:
+            (JSON.parse(j.payload) as { tableLabel?: string }).tableLabel ?? "?",
+          attempts: j.attempts,
+          lastError: j.lastError,
+        })),
+    };
   }
 
   /* ---------------------------------------------------------------- *
