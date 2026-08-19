@@ -71,6 +71,7 @@ export type OutletEvent =
       available: boolean;
       menuVersion: number;
     }
+  | { type: "menu.changed"; menuVersion: number }
   | { type: "print.queued"; orderId: string | null }
   | { type: "print.printed"; jobId: string; orderId: string | null }
   | {

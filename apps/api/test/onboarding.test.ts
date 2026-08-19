@@ -8,6 +8,8 @@
 import { describe, expect, it } from "vitest";
 import { SELF } from "cloudflare:test";
 
+import { SEED_CATEGORIES, SEED_ITEMS } from "../src/seed-data";
+
 const SEED_TOKEN = "test-seed-token";
 
 interface SeedResponse {
@@ -65,10 +67,20 @@ describe("onboarding", () => {
 
     const page = (await menu.json()) as {
       table: { label: string };
-      menu: { items: { nameMs: string; priceSen: number }[] };
+      menu: {
+        categories: { id: string; nameMs: string }[];
+        items: { nameMs: string; priceSen: number }[];
+      };
     };
     expect(page.table.label).toBe("Meja 01");
-    expect(page.menu.items).toHaveLength(9);
+    // Counted from the seed rather than hardcoded: the menu is the one thing
+    // here that is meant to change, and a magic number turns every menu edit
+    // into a failing test that says nothing useful.
+    expect(page.menu.items).toHaveLength(SEED_ITEMS.length);
+    expect(page.menu.categories).toHaveLength(SEED_CATEGORIES.length);
+    expect(page.menu.categories.map((c) => c.nameMs)).toEqual(
+      SEED_CATEGORIES.map((c) => c.nameMs),
+    );
 
     const nasiLemak = page.menu.items.find(
       (i) => i.nameMs === "Nasi Lemak Ayam Berempah",

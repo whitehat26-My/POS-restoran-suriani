@@ -44,13 +44,27 @@ await p.waitForSelector('.shop');
 (await p.textContent('.table-tag')).includes('Meja 01') || fail('table label');
 ok('table URL serves the ordering page');
 
-// 2. Language toggle
+// 2. The eight categories the owner named, in her order
+const rail = await p.$$eval('.cat-rail button', (bs) => bs.map((b) => b.textContent.trim()));
+JSON.stringify(rail) === JSON.stringify([
+  'Nasi Campur', 'Nasi Lemak', 'Nasi Goreng', 'Mee / Bihun',
+  'Roti', 'Burger', 'Western', 'Minuman',
+]) || fail(`category rail: ${JSON.stringify(rail)}`);
+ok('the eight categories render in order');
+
+// A category with no dishes yet says so rather than looking broken.
+await p.click('.cat-rail button:has-text("Burger")');
+await p.waitForSelector('.empty-cat');
+ok('an empty category explains itself');
+
+// 3. Language toggle
+await p.click('.cat-rail button:has-text("Nasi Lemak")');
 await p.click('.lang-swap button:has-text("EN")');
 await p.waitForSelector('.dish-name:has-text("Nasi Lemak with Spiced Chicken")');
 ok('EN toggle swaps strings');
 await p.click('.lang-swap button:has-text("BM")');
 
-// 3. Required modifier blocks Add until chosen (Teh Tarik, min_select 1)
+// 4. Required modifier blocks Add until chosen (Teh Tarik, min_select 1)
 await p.click('.cat-rail button:has-text("Minuman")');
 await p.click('.dish:has-text("Teh Tarik")');
 await p.waitForSelector('.sheet');
@@ -61,29 +75,40 @@ if (!(await p.locator('.sheet-add').isEnabled())) fail('Add still disabled after
 await p.click('.sheet-add');
 ok('required option enforced in UI, priced +ais');
 
-// 4. Nasi lemak with tambah telur
-await p.click('.cat-rail button:has-text("Nasi")');
+// 5. Nasi lemak with tambah telur, and a request typed by hand
+await p.click('.cat-rail button:has-text("Nasi Lemak")');
 await p.click('.dish:has-text("Nasi Lemak")');
 await p.click('.opt:has-text("Tambah telur")');
+await p.fill('.notes-input', 'kurang pedas');
 await p.click('.sheet-add');
-ok('extras added');
+ok('extras added with a request');
 
-// 5. Cart survives a reload
-(await p.textContent('#root')).includes('2') || null;
+// 6. A dish with no options at all still takes a request, by chip
+await p.click('.cat-rail button:has-text("Minuman")');
+await p.click('.dish:has-text("Kopi O Ais")');
+await p.waitForSelector('.request .notes-input');
+await p.click('.chip:has-text("Kurang manis")');
+const chipNote = await p.inputValue('.notes-input');
+chipNote.includes('Kurang manis') || fail(`chip did not fill the note: ${chipNote}`);
+await p.click('.sheet-add');
+ok('a dish with no options still takes a request');
+
+// 7. Cart survives a reload
 await p.reload();
 await p.waitForSelector('.cart-bar.is-up');
 const total = await p.textContent('.cart-total strong');
-total.includes('17.00') || fail(`cart total after reload: ${total} (want RM 17.00 = 3.50 + 13.50)`);
+total.includes('20.20') ||
+  fail(`cart total after reload: ${total} (want RM 20.20 = 3.50 + 13.50 + 3.20)`);
 ok('cart survives reload with correct total');
 
-// 6. Submit
+// 8. Submit
 await p.click('.cart-bar .btn');
 await p.waitForSelector('.total-row');
 await p.click('.page .btn-accent');
 await p.waitForSelector('.sent-title', { timeout: 10000 });
 ok('order placed, confirmation shown');
 
-// 7. Verify server side: order in KB, none in Bangi, total is the server's own maths
+// 9. Verify server side: order in KB, none in Bangi, total is the server's own maths
 const login = await fetch('http://localhost:8787/api/auth/login', {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ phone: OWNER_PHONE, pin: OWNER_PIN }),
@@ -93,11 +118,17 @@ const hdr = { Authorization: `Bearer ${token}` };
 const kb = await (await fetch(`http://localhost:8787/api/outlets/${KB}/orders`, { headers: hdr })).json();
 const bg = await (await fetch(`http://localhost:8787/api/outlets/${BANGI}/orders`, { headers: hdr })).json();
 kb.orders.length === 1 || fail(`KB should have 1 order, has ${kb.orders.length}`);
-kb.orders[0].totalSen === 1700 || fail(`server total ${kb.orders[0].totalSen}, want 1700`);
+kb.orders[0].totalSen === 2020 || fail(`server total ${kb.orders[0].totalSen}, want 2020`);
 bg.orders.length === 0 || fail('Bangi must have zero orders');
-ok('order landed in the right outlet only; server priced RM 17.00 itself');
+ok('order landed in the right outlet only; server priced RM 20.20 itself');
 
-// 8. Offline: SW should keep the page alive
+// The requests typed on the phone must survive into what the kitchen reads.
+const notes = kb.orders[0].lines.flatMap((l) => (l.notes ? [l.notes] : []));
+notes.some((n) => n.includes('kurang pedas')) || fail('typed request lost');
+notes.some((n) => n.includes('Kurang manis')) || fail('chip request lost');
+ok('both requests reached the server on the order lines');
+
+// 10. Offline: SW should keep the page alive
 await p.waitForTimeout(1500); // let the service worker settle
 await ctx.setOffline(true);
 await p.reload().catch(() => {});

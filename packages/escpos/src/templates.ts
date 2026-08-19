@@ -104,9 +104,19 @@ export interface Receipt {
   paidAt: Date;
   lines: ReceiptLine[];
   totalSen: number;
-  /** cash | duitnow_qr | gateway — drives the drawer kick. */
-  method: string;
+  itemCount?: number;
+  /**
+   * cash | duitnow_qr | gateway — drives the drawer kick.
+   *
+   * Absent means the bill has not been settled yet: the customer asked for it,
+   * the cashier printed it, and they will pay at the counter. That slip must
+   * not claim a payment method it does not have, and must not kick a drawer
+   * with nothing to put in it.
+   */
+  method?: string;
   cashReceivedSen?: number;
+  /** Stamps SALINAN, so a second copy is never mistaken for a second sale. */
+  reprint?: boolean;
 }
 
 function money(sen: number): string {
@@ -120,11 +130,17 @@ function money(sen: number): string {
  * so the layout is settled and tested before money depends on it.
  */
 export function renderReceipt(receipt: Receipt): Uint8Array {
+  const paid = receipt.method !== undefined;
   const p = new EscPos().init();
 
-  p.align("center").bold(true).size(2, 2);
+  p.align("center");
+  if (receipt.reprint) {
+    p.bold(true).line("*** SALINAN ***").bold(false);
+  }
+  p.bold(true).size(2, 2);
   p.line(receipt.outletName.toUpperCase());
   p.size(1, 1).bold(false);
+  p.line(paid ? "RESIT" : "BIL");
   p.line(`${receipt.tableLabel}   ${receipt.orderCode}`);
   p.line(receipt.paidAt.toISOString().slice(0, 16).replace("T", " "));
   p.align("left").rule(WIDTH);
@@ -144,27 +160,38 @@ export function renderReceipt(receipt: Receipt): Uint8Array {
   }
 
   p.rule(WIDTH);
+  if (receipt.itemCount !== undefined) {
+    p.columns("Bilangan hidangan", String(receipt.itemCount), WIDTH);
+  }
   p.size(1, 2).bold(true);
   p.columns("JUMLAH", `RM ${money(receipt.totalSen)}`, WIDTH / 2);
   p.bold(false).size(1, 1);
 
-  const methodLabel =
-    receipt.method === "cash"
-      ? "TUNAI"
-      : receipt.method === "duitnow_qr"
-        ? "DUITNOW QR"
-        : receipt.method.toUpperCase();
-  p.columns("Bayaran", methodLabel, WIDTH);
-  if (receipt.cashReceivedSen !== undefined) {
-    p.columns("Diterima", money(receipt.cashReceivedSen), WIDTH);
-    p.columns("Baki", money(receipt.cashReceivedSen - receipt.totalSen), WIDTH);
+  if (paid) {
+    const methodLabel =
+      receipt.method === "cash"
+        ? "TUNAI"
+        : receipt.method === "duitnow_qr"
+          ? "DUITNOW QR"
+          : receipt.method!.toUpperCase();
+    p.columns("Bayaran", methodLabel, WIDTH);
+    if (receipt.cashReceivedSen !== undefined) {
+      p.columns("Diterima", money(receipt.cashReceivedSen), WIDTH);
+      p.columns("Baki", money(receipt.cashReceivedSen - receipt.totalSen), WIDTH);
+    }
   }
 
-  p.feed(1).align("center").line("Terima kasih!").line("Jumpa lagi");
+  p.feed(1).align("center");
+  if (paid) {
+    p.line("Terima kasih!").line("Jumpa lagi");
+  } else {
+    p.line("Sila jelaskan di kaunter").line("Terima kasih!");
+  }
   p.cut();
 
-  // The drawer only opens for cash. A kick on a QR payment would have the
-  // till springing open with nothing to put in it.
+  // The drawer only opens for cash actually taken. A kick on a QR payment —
+  // or on a bill nobody has paid yet — has the till springing open with
+  // nothing to put in it.
   if (receipt.method === "cash") p.drawerKick();
 
   return p.bytes();

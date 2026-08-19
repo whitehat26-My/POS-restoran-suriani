@@ -10,7 +10,8 @@ Two branches of Restoran Suriani are customer zero.
 
 ## Status
 
-**Phase 4 complete.** Orders become paper: routed to the right station, retried, and alarmed if they fail.
+**Phase 4b complete.** The owner's own menu headings, a request box on every dish, a printable
+bill at the counter, and a daily record she can read on her phone.
 
 | Phase | | |
 |---|---|---|
@@ -20,6 +21,7 @@ Two branches of Restoran Suriani are customer zero.
 | 2b | Customer ordering app — menu, modifiers, cart, offline shell | ✅ |
 | 3 | Cashier POS — live floor map, tickets, bills, 86-ing, Minta Bil / Panggil Pelayan | ✅ |
 | 4 | Print pipeline — ESC/POS, station routing, retry, reprint | ✅ |
+| 4b | The owner's eight categories, per-dish requests, printable bill, daily record | ✅ |
 | 5 | Android POS shell — offline, dual-transport printing | next |
 
 Full plan and roadmap: [`docs/PLAN.md`](docs/PLAN.md).
@@ -67,8 +69,20 @@ ADMIN_SEED_TOKEN=any-local-value pnpm seed
 
 The seed prints a working table QR URL for each branch.
 
+The menu lives in [`apps/api/src/seed-data.ts`](apps/api/src/seed-data.ts) until Phase 7 gives the
+owner an editor. To push a changed menu to branches that are already seeded:
+
 ```bash
-pnpm test        # 81 tests (13 ESC/POS golden bytes + 68 in the Workers runtime)
+ADMIN_SEED_TOKEN=any-local-value pnpm seed --sync-menu
+```
+
+That upserts every category, dish, option and print route, **and removes what the file no longer
+lists**. It is opt-in for exactly that reason. Two things it deliberately leaves alone: a dish the
+kitchen has 86'd stays 86'd, and table QR codes are never touched. Deleting a dish is safe because
+`order_items` snapshots the name and price — last month's bill still reads correctly without it.
+
+```bash
+pnpm test        # 98 tests (15 ESC/POS golden bytes + 83 in the Workers runtime)
 pnpm typecheck
 pnpm lint
 ```
@@ -100,9 +114,9 @@ apps/api/            Cloudflare Worker — API, control plane, outlet Durable Ob
   src/outlet/        per-outlet schema, migrations, Durable Object
   src/control/       D1 schema: orgs, users, outlets, devices, usage
   test/              isolation · onboarding · tables · modifiers · pricing ·
-                     realtime · printing · money
+                     realtime · printing · money · menu-sync · reports
 apps/menu/           customer ordering app (Vite + React), served at /
-apps/pos/            the till (Vite + React, dark), served at /pos/
+apps/pos/            the till and the owner's daily record (Vite + React, dark), at /pos/
                      — both assembled into apps/api/.assets by `pnpm build:web`;
                      each app's e2e/ holds its browser test
 packages/core/       shared money arithmetic and ids — one implementation for
@@ -130,8 +144,34 @@ column for counter orders and 86-ing.
   "86", phones already on the menu quietly refetch.
 - *Minta Bil* turns the table amber on the floor map; *Panggil Pelayan* rings once per minute
   per table, coalescing impatient taps.
+- **Tapping a table answers the counter's first question** — a strip across the top of the bill
+  reads *"7 hidangan · RM 84.20"* before any scrolling, then every order and line beneath it.
+- **"Cetak resit" prints the bill** at the counter station. Nothing has been paid yet, so the slip
+  says `BIL`, names no payment method, and does not kick the drawer. Phase 6 calls the same
+  renderer with a method and gets a paid receipt with the pulse.
 - Closing a bill is the primitive Phase 6's payments will front — explicit and audit-logged,
   never silent.
+
+## The daily record
+
+A **Rekod** tab beside the outlet switcher, for owners and managers only — a cashier gets 403,
+another organisation gets 404. Laid out to work at phone width, because the owner reads yesterday's
+takings on her phone rather than walking to the counter.
+
+```
+GET /api/outlets/:id/reports/daily?days=30   date, sales, bills, dishes — newest first
+GET /api/outlets/:id/reports/daily/:date     that day by hour, by dish, by category
+```
+
+- **A day is derived from the orders, not from a rollup table.** That costs a range scan and buys
+  three things worth more: the number is right retroactively, it cannot drift from the orders it
+  claims to summarise, and there is no nightly job whose silent failure leaves a hole in the books.
+- **Days are bucketed in the outlet's own timezone**, taken from D1 and never from the request.
+  An 8pm order in Kuala Lumpur is 12:00 UTC the next day — bucket by UTC and every evening's
+  takings quietly land on tomorrow. There is a test that fails if that regresses.
+- It says **Jualan**, not *untung*. The system knows what the restaurant took, not what the
+  ingredients cost. Profit needs cost prices per dish; that is Phase 7, and until it exists a
+  number labelled profit would be a number that gets believed.
 
 ## Printing
 
@@ -165,6 +205,14 @@ to your terminal; `tools/print-agent` drives it, and drives real hardware unchan
 `/t/<outletId>/<qrToken>` — the URL on every printed card — serves the ordering app;
 its data lives under `/api/t/...`. One Worker serves both, so they cannot drift.
 
+- **The categories are the kitchen's own** — nasi campur, nasi lemak, nasi goreng, mee/bihun,
+  roti, burger, western, minuman. A category with nothing in it yet says so rather than
+  rendering blank.
+- **Every dish takes a request.** Tapping any item opens a sheet with its options, a quantity
+  stepper, and an *"Ada permintaan?"* box with one-tap chips (kurang manis, tanpa cili, bungkus).
+  It is on every dish, not only the ones with options: half the menu has no options at all, and a
+  customer should not have to guess which dishes will listen. The note reaches the kitchen docket
+  and the counter bill.
 - **Prices never come from the phone.** Menu prices are snapshotted server-side, and
   modifier options ("tambah telur", "panas/ais") are sent as ids that the server
   resolves against its own tables. A forged `priceDeltaSen` in the request body is

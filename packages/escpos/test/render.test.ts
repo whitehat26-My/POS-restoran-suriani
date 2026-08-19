@@ -148,4 +148,35 @@ describe("counter receipt", () => {
       ),
     ).toBe(false);
   });
+
+  // The slip the counter prints when a table taps "Minta Bil": the customer
+  // has not paid yet, so it must not claim a payment method and must not open
+  // a drawer that has nothing to receive.
+  it("prints an unpaid bill when no method is set", () => {
+    const bill = {
+      ...receipt,
+      method: undefined,
+      cashReceivedSen: undefined,
+      itemCount: 3,
+    };
+    const text = decode(renderReceipt(bill));
+
+    expect(text).toContain("BIL");
+    expect(text).not.toContain("RESIT");
+    expect(text).not.toContain("TUNAI");
+    expect(text).not.toContain("Bayaran");
+    expect(text).toContain("Sila jelaskan di kaunter");
+    expect(text).toContain("27.00");
+    expect(text).toContain("Bilangan hidangan");
+
+    const kick = [0x1b, 0x70, 0x00, 0x19, 0xfa];
+    expect(includesSequence(renderReceipt(bill), kick)).toBe(false);
+  });
+
+  it("stamps a reprint as a copy", () => {
+    expect(decode(renderReceipt({ ...receipt, reprint: true }))).toContain(
+      "SALINAN",
+    );
+    expect(decode(renderReceipt(receipt))).not.toContain("SALINAN");
+  });
 });

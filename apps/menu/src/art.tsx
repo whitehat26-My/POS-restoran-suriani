@@ -116,20 +116,6 @@ const ART: Record<string, React.ReactNode> = {
       }
     />
   ),
-  itm_cendol: (
-    <Plate
-      inner={
-        <>
-          <path d="M30 26h24l-4 32H34z" fill="#FCFBF7" stroke="#0B5D48" strokeWidth="2.5" />
-          <path d="M33 40h18l-2 16H35z" fill="#F0EAD8" />
-          <rect x="35" y="42" width="4" height="9" rx="2" fill="#3E9E62" />
-          <rect x="41" y="45" width="4" height="9" rx="2" fill="#3E9E62" />
-          <rect x="46" y="43" width="4" height="9" rx="2" fill="#3E9E62" />
-          <path d="M33 36h18l-1 5H34z" fill="#8A5A2E" />
-        </>
-      }
-    />
-  ),
 };
 
 export function DishArt({ itemId }: { itemId: string }) {

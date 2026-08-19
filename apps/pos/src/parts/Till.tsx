@@ -10,16 +10,24 @@ import {
   type MenuCategory,
   type MenuItem,
   type Outlet,
+  type Role,
   type Ticket,
   type Zone,
 } from "../api";
 import { openLive, type LiveState } from "../live";
 import { BillSheet } from "./BillSheet";
 import { ItemConfig, type ConfiguredLine } from "./ItemConfig";
+import { Records } from "./Records";
 
-export function Till({ outlets }: { outlets: Outlet[] }) {
+export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
   const [outletId, setOutletId] = useState(outlets[0]!.id);
   const outlet = outlets.find((o) => o.id === outletId)!;
+
+  // The daily record is the owner's, not the counter's. Hidden rather than
+  // shown-and-403'd, because a button that always fails is worse than no
+  // button — but the server gate is what actually enforces it.
+  const manages = role === "owner" || role === "manager";
+  const [view, setView] = useState<"floor" | "records">("floor");
 
   const [live, setLive] = useState<LiveState>("connecting");
   const [zones, setZones] = useState<Zone[]>([]);
@@ -267,6 +275,25 @@ export function Till({ outlets }: { outlets: Outlet[] }) {
           <small>{outlet.name}</small>
         </div>
         <div className="bar-right">
+          {manages && (
+            <>
+              <button
+                className="pill"
+                aria-pressed={view === "floor"}
+                onClick={() => setView("floor")}
+              >
+                Kaunter
+              </button>
+              <button
+                className="pill"
+                aria-pressed={view === "records"}
+                data-testid="tab-records"
+                onClick={() => setView("records")}
+              >
+                Rekod
+              </button>
+            </>
+          )}
           {outlets.length > 1 &&
             outlets.map((o) => (
               <button
@@ -338,6 +365,9 @@ export function Till({ outlets }: { outlets: Outlet[] }) {
         </div>
       )}
 
+      {view === "records" ? (
+        <Records outletId={outletId} outletName={outlet.name} onSay={say} />
+      ) : (
       <div className="body">
         <section className="col">
           <div className="col-head">Pelan meja</div>
@@ -457,6 +487,7 @@ export function Till({ outlets }: { outlets: Outlet[] }) {
           )}
         </section>
       </div>
+      )}
 
       {billTable && (
         <BillSheet

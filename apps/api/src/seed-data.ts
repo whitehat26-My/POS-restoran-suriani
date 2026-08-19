@@ -1,5 +1,9 @@
 /**
- * The real Restoran Suriani menu, matching the Phase 0 prototype.
+ * The Restoran Suriani menu.
+ *
+ * The eight categories are the kitchen's own, given by the owner: a customer
+ * looking for nasi goreng should find a heading that says nasi goreng, not a
+ * generic "Nasi" they have to dig through.
  *
  * Prices are integer sen. Two branches share this master menu; per-outlet
  * price and availability overrides arrive in Phase 7.
@@ -11,16 +15,31 @@ import type {
 } from "./outlet/OutletDO";
 
 export const SEED_CATEGORIES: SeedCategory[] = [
-  { id: "cat_nasi", nameMs: "Nasi", nameEn: "Rice", sortOrder: 0 },
-  { id: "cat_mee", nameMs: "Mee & Roti", nameEn: "Noodles & Roti", sortOrder: 1 },
-  { id: "cat_minum", nameMs: "Minuman", nameEn: "Drinks", sortOrder: 2 },
-  { id: "cat_manis", nameMs: "Pencuci Mulut", nameEn: "Desserts", sortOrder: 3 },
+  { id: "cat_nasicampur", nameMs: "Nasi Campur", nameEn: "Mixed Rice", sortOrder: 0 },
+  { id: "cat_nasilemak", nameMs: "Nasi Lemak", nameEn: "Nasi Lemak", sortOrder: 1 },
+  { id: "cat_nasigoreng", nameMs: "Nasi Goreng", nameEn: "Fried Rice", sortOrder: 2 },
+  { id: "cat_meebihun", nameMs: "Mee / Bihun", nameEn: "Noodles", sortOrder: 3 },
+  { id: "cat_roti", nameMs: "Roti", nameEn: "Roti", sortOrder: 4 },
+  { id: "cat_burger", nameMs: "Burger", nameEn: "Burger", sortOrder: 5 },
+  { id: "cat_western", nameMs: "Western", nameEn: "Western", sortOrder: 6 },
+  { id: "cat_minum", nameMs: "Minuman", nameEn: "Drinks", sortOrder: 7 },
 ];
 
 export const SEED_ITEMS: SeedItem[] = [
   {
+    id: "itm_ayam",
+    categoryId: "cat_nasicampur",
+    nameMs: "Ayam Goreng Berempah",
+    nameEn: "Spiced Fried Chicken",
+    descMs: "Dua ketul, rempah rumah",
+    descEn: "Two pieces, house spice blend",
+    priceSen: 750,
+    tags: ["best", "halal"],
+    prepMinutes: 14,
+  },
+  {
     id: "itm_nasilemak",
-    categoryId: "cat_nasi",
+    categoryId: "cat_nasilemak",
     nameMs: "Nasi Lemak Ayam Berempah",
     nameEn: "Nasi Lemak with Spiced Chicken",
     descMs: "Nasi santan, sambal tumis, telur, ikan bilis",
@@ -31,7 +50,7 @@ export const SEED_ITEMS: SeedItem[] = [
   },
   {
     id: "itm_nasigoreng",
-    categoryId: "cat_nasi",
+    categoryId: "cat_nasigoreng",
     nameMs: "Nasi Goreng Kampung",
     nameEn: "Kampung Fried Rice",
     descMs: "Ikan bilis, kangkung, cili padi",
@@ -41,19 +60,8 @@ export const SEED_ITEMS: SeedItem[] = [
     prepMinutes: 10,
   },
   {
-    id: "itm_ayam",
-    categoryId: "cat_nasi",
-    nameMs: "Ayam Goreng Berempah",
-    nameEn: "Spiced Fried Chicken",
-    descMs: "Dua ketul, rempah rumah",
-    descEn: "Two pieces, house spice blend",
-    priceSen: 750,
-    tags: ["best", "halal"],
-    prepMinutes: 14,
-  },
-  {
     id: "itm_meegoreng",
-    categoryId: "cat_mee",
+    categoryId: "cat_meebihun",
     nameMs: "Mee Goreng Mamak",
     nameEn: "Mamak Fried Noodles",
     descMs: "Mee kuning, tauhu, telur, kobis",
@@ -64,7 +72,7 @@ export const SEED_ITEMS: SeedItem[] = [
   },
   {
     id: "itm_roti",
-    categoryId: "cat_mee",
+    categoryId: "cat_roti",
     nameMs: "Roti Canai Telur",
     nameEn: "Roti Canai with Egg",
     descMs: "Dihidang dengan dhal dan sambal",
@@ -103,16 +111,6 @@ export const SEED_ITEMS: SeedItem[] = [
     descEn: "With powder on top",
     priceSen: 400,
     prepMinutes: 3,
-  },
-  {
-    id: "itm_cendol",
-    categoryId: "cat_manis",
-    nameMs: "Cendol Pulut",
-    nameEn: "Cendol with Glutinous Rice",
-    descMs: "Gula melaka, santan pekat",
-    descEn: "Palm sugar, thick coconut milk",
-    priceSen: 650,
-    prepMinutes: 5,
   },
 ];
 
@@ -188,14 +186,22 @@ export const SEED_STATIONS = [
     target: "kitchen",
     isDefault: true,
     sortOrder: 0,
-    categoryIds: ["cat_nasi", "cat_mee"],
+    categoryIds: [
+      "cat_nasicampur",
+      "cat_nasilemak",
+      "cat_nasigoreng",
+      "cat_meebihun",
+      "cat_roti",
+      "cat_burger",
+      "cat_western",
+    ],
   },
   {
     id: "st_drinks",
     name: "Minuman",
     target: "drinks",
     sortOrder: 1,
-    categoryIds: ["cat_minum", "cat_manis"],
+    categoryIds: ["cat_minum"],
   },
   {
     id: "st_counter",

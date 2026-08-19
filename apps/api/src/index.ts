@@ -78,6 +78,14 @@ app.post("/api/admin/seed", async (c) => {
     ownerName?: string;
     ownerPhone: string;
     ownerPin: string;
+    /**
+     * Re-apply the master menu to an org that already exists.
+     *
+     * Opt-in on purpose. Once Phase 7 lets an owner edit her own menu, a
+     * seed run that silently overwrote it would be the worst kind of bug —
+     * so the caller has to say so.
+     */
+    syncMenu?: boolean;
   }>();
 
   if (!body.ownerPhone || !body.ownerPin) {
@@ -97,10 +105,41 @@ app.post("/api/admin/seed", async (c) => {
       .select()
       .from(control.outlets)
       .where(eq(control.outlets.orgId, existing[0].orgId));
+
+    if (!body.syncMenu) {
+      return c.json({
+        created: false,
+        orgId: existing[0].orgId,
+        outlets: owned.map((o) => ({ id: o.id, name: o.name })),
+      });
+    }
+
+    const synced: Array<{
+      id: string;
+      name: string;
+      categories: number;
+      items: number;
+      removedCategories: number;
+      removedItems: number;
+    }> = [];
+    for (const outlet of owned) {
+      const handle = await getPublicOutlet(c.env, outlet.id);
+      if (!handle) continue;
+      await handle.stub.updateSettings({ outletName: outlet.name });
+      const result = await handle.stub.applyMenu({
+        categories: SEED_CATEGORIES,
+        items: SEED_ITEMS,
+        modifierGroups: SEED_MODIFIER_GROUPS,
+        stations: SEED_STATIONS,
+      });
+      synced.push({ id: outlet.id, name: outlet.name, ...result });
+    }
+
     return c.json({
       created: false,
+      menuSynced: true,
       orgId: existing[0].orgId,
-      outlets: owned.map((o) => ({ id: o.id, name: o.name })),
+      outlets: synced,
     });
   }
 
@@ -162,6 +201,7 @@ app.post("/api/admin/seed", async (c) => {
       tables,
       modifierGroups: SEED_MODIFIER_GROUPS,
       stations: SEED_STATIONS,
+      outletName: spec.name,
     });
 
     created.push({
@@ -237,6 +277,9 @@ app.get("/api/outlets", async (c) => {
 
   const outlets = await listOutletsForSession(c.env, session);
   return c.json({
+    // The role travels with the outlet list so the till can hide the owner's
+    // record screen rather than offering a button that answers 403.
+    role: session.role,
     outlets: outlets.map((o) => ({ id: o.id, name: o.name, status: o.status })),
   });
 });
@@ -695,6 +738,34 @@ app.post("/api/outlets/:outletId/sessions/:sessionId/close", async (c) => {
   return c.json({ ok: true });
 });
 
+/**
+ * Print the bill for an open table.
+ *
+ * Any staff role, deliberately: a cashier who cannot hand a customer their
+ * bill cannot do the job. Phase 6 will pass a `method` here once a payment has
+ * been recorded; until then the slip prints as an unsettled bill.
+ */
+app.post("/api/outlets/:outletId/sessions/:sessionId/receipt", async (c) => {
+  const session = c.get("session");
+  const handle = await getOutletForSession(
+    c.env,
+    session,
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const result = await handle.stub.queueReceipt({
+    sessionId: c.req.param("sessionId"),
+    userId: session.userId,
+  });
+  if (!result.ok) {
+    return result.error === "no_station"
+      ? c.json({ error: "no print station configured" }, 409)
+      : c.json({ error: "not found" }, 404);
+  }
+  return c.json(result);
+});
+
 /** 86-ing. Any staff role: it is the cashier who sees the empty pot. */
 app.patch("/api/outlets/:outletId/items/:itemId/availability", async (c) => {
   const session = c.get("session");
@@ -715,6 +786,49 @@ app.patch("/api/outlets/:outletId/items/:itemId/availability", async (c) => {
   });
   if (!result.ok) return c.json({ error: "not found" }, 404);
   return c.json(result);
+});
+
+/* ------------------------------------------------------------------ *
+ * The daily record
+ *
+ * Owner and manager only. A cashier gets 403 — they are legitimately here,
+ * just not entitled to the takings — and another organisation gets 404. The
+ * timezone comes from the outlet row in D1, never from the request: a day
+ * boundary the caller can move is a day boundary that can be used to move
+ * money between days.
+ * ------------------------------------------------------------------ */
+
+app.get("/api/outlets/:outletId/reports/daily", manages, async (c) => {
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const days = Number(c.req.query("days") ?? 30);
+  const result = await handle.stub.dailySales({
+    timeZone: handle.outlet.timezone,
+    days: Number.isFinite(days) ? days : 30,
+  });
+  return c.json(result);
+});
+
+app.get("/api/outlets/:outletId/reports/daily/:date", manages, async (c) => {
+  const date = c.req.param("date");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return c.json({ error: "date must be YYYY-MM-DD" }, 400);
+  }
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  return c.json(
+    await handle.stub.daySummary({ date, timeZone: handle.outlet.timezone }),
+  );
 });
 
 /** Printer health for the till's pill and failure banner. */

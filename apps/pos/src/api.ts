@@ -9,6 +9,34 @@ export interface Outlet {
   name: string;
 }
 
+export type Role = "owner" | "manager" | "cashier";
+
+export interface DayRow {
+  date: string;
+  salesSen: Sen;
+  orderCount: number;
+  billCount: number;
+  itemCount: number;
+}
+
+export interface DaySummary extends DayRow {
+  byHour: { hour: number; salesSen: Sen; orderCount: number }[];
+  byCategory: {
+    categoryId: string;
+    nameMs: string;
+    nameEn: string;
+    salesSen: Sen;
+    qty: number;
+  }[];
+  byItem: {
+    menuItemId: string;
+    nameMs: string;
+    nameEn: string;
+    salesSen: Sen;
+    qty: number;
+  }[];
+}
+
 export interface Zone {
   id: string;
   nameMs: string;
@@ -92,6 +120,8 @@ export interface BillSheet {
     openedAt: number;
     status: string;
     totalSen: Sen;
+    /** Plates on the table: what the counter wants to know first. */
+    itemCount: number;
     orders: {
       id: string;
       placedAt: number;
@@ -126,7 +156,7 @@ export const api = {
     }).then(json<{ user: { id: string; name: string; role: string } }>),
 
   outlets: () =>
-    fetch("/api/outlets").then(json<{ outlets: Outlet[] }>),
+    fetch("/api/outlets").then(json<{ role: Role; outlets: Outlet[] }>),
 
   floor: (outletId: string) =>
     fetch(`/api/outlets/${outletId}/floor`).then(
@@ -150,6 +180,21 @@ export const api = {
     fetch(`/api/outlets/${outletId}/orders/${orderId}/served`, {
       method: "POST",
     }).then(json<{ ok: boolean }>),
+
+  dailySales: (outletId: string, days = 30) =>
+    fetch(`/api/outlets/${outletId}/reports/daily?days=${days}`).then(
+      json<{ days: DayRow[] }>,
+    ),
+
+  daySummary: (outletId: string, date: string) =>
+    fetch(`/api/outlets/${outletId}/reports/daily/${date}`).then(
+      json<DaySummary>,
+    ),
+
+  printReceipt: (outletId: string, sessionId: string) =>
+    fetch(`/api/outlets/${outletId}/sessions/${sessionId}/receipt`, {
+      method: "POST",
+    }).then(json<{ ok: boolean; jobId: string; totalSen: Sen; itemCount: number }>),
 
   closeSession: (outletId: string, sessionId: string) =>
     fetch(`/api/outlets/${outletId}/sessions/${sessionId}/close`, {

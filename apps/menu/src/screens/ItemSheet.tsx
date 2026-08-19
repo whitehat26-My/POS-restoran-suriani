@@ -6,11 +6,17 @@ import type { Lang, Key } from "../i18n";
 import { DishArt } from "../art";
 
 /**
- * Bottom sheet for one dish: options, quantity, a note for the kitchen.
+ * Bottom sheet for one dish: options, quantity, and a request for the kitchen.
  *
  * Radio behaviour when a group allows one choice, checkboxes when it allows
  * several. Add is disabled until every required group is satisfied, so the
  * server's option_required rejection is a backstop rather than the UX.
+ *
+ * The request box is on *every* dish, not only the ones with options. Half the
+ * menu has no modifier groups at all, and a customer who wants their kopi
+ * kurang manis should not have to guess whether this dish is one of the ones
+ * that will listen. The chips are there because typing on a phone while
+ * holding a drink is the slowest part of ordering.
  */
 export function ItemSheet({
   item,
@@ -28,6 +34,27 @@ export function ItemSheet({
   const [qty, setQty] = useState(1);
   const [chosen, setChosen] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
+
+  const NOTE_MAX = 120;
+  const chips: Key[] = [
+    "chip_manis",
+    "chip_pedas",
+    "chip_cili",
+    "chip_nasi",
+    "chip_bungkus",
+  ];
+
+  /** Chips toggle: tapping one twice removes it rather than duplicating it. */
+  const toggleChip = (label: string) => {
+    const parts = notes
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+    const next = parts.includes(label)
+      ? parts.filter((p) => p !== label)
+      : [...parts, label];
+    setNotes(next.join(", ").slice(0, NOTE_MAX));
+  };
 
   const toggle = (groupId: string, optionId: string, maxSelect: number) => {
     const group = item.modifierGroups.find((g) => g.id === groupId);
@@ -114,13 +141,44 @@ export function ItemSheet({
           </div>
         ))}
 
-        <input
-          className="notes-input"
-          placeholder={t("notes_ph")}
-          value={notes}
-          maxLength={120}
-          onChange={(e) => setNotes(e.target.value)}
-        />
+        <div className="group request">
+          <div className="group-head">
+            <span className="group-name">{t("request_title")}</span>
+            <span className="group-rule">{t("request_hint")}</span>
+          </div>
+          <div className="chips">
+            {chips.map((key) => {
+              const label = t(key);
+              const on = notes
+                .split(",")
+                .map((p) => p.trim())
+                .includes(label);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className="chip"
+                  aria-pressed={on}
+                  onClick={() => toggleChip(label)}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <textarea
+            className="notes-input"
+            aria-label={t("request_title")}
+            placeholder={t("notes_ph")}
+            value={notes}
+            rows={2}
+            maxLength={NOTE_MAX}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+          <div className="notes-count num">
+            {notes.length}/{NOTE_MAX}
+          </div>
+        </div>
 
         <div className="sheet-foot">
           <div className="stepper" aria-label={t("qty")}>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { api, type Outlet } from "./api";
+import { api, type Outlet, type Role } from "./api";
 import { Till } from "./parts/Till";
 
 /**
@@ -10,6 +10,7 @@ import { Till } from "./parts/Till";
  */
 export function App() {
   const [outlets, setOutlets] = useState<Outlet[] | null>(null);
+  const [role, setRole] = useState<Role>("cashier");
   const [checked, setChecked] = useState(false);
   const [phone, setPhone] = useState("");
   const [pin, setPin] = useState("");
@@ -19,7 +20,10 @@ export function App() {
   useEffect(() => {
     api
       .outlets()
-      .then((r) => setOutlets(r.outlets))
+      .then((r) => {
+        setOutlets(r.outlets);
+        setRole(r.role);
+      })
       .catch(() => {})
       .finally(() => setChecked(true));
   }, []);
@@ -31,6 +35,7 @@ export function App() {
       await api.login(phone.trim(), pin.trim());
       const r = await api.outlets();
       setOutlets(r.outlets);
+      setRole(r.role);
     } catch {
       setError("Nombor telefon atau PIN salah.");
     } finally {
@@ -83,5 +88,5 @@ export function App() {
     );
   }
 
-  return <Till outlets={outlets} />;
+  return <Till outlets={outlets} role={role} />;
 }

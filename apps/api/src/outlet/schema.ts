@@ -122,6 +122,8 @@ export const tables = sqliteTable(
 /** Single-row outlet configuration. */
 export const settings = sqliteTable("settings", {
   id: integer("id").primaryKey(),
+  /** This branch's own name, as it prints at the top of every slip. */
+  outletName: text("outlet_name"),
   wifiSsid: text("wifi_ssid"),
   /** The guest network password, printed on the table card. Staff-only. */
   wifiPassword: text("wifi_password"),

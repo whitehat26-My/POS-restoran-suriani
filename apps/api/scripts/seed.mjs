@@ -10,9 +10,15 @@
  *   ADMIN_SEED_TOKEN=... \
  *   OWNER_PHONE=+60123456789 OWNER_PIN=246810 \
  *   pnpm seed
+ *
+ * Add --sync-menu to re-apply the master menu to an org that already exists.
  */
 
 const API_URL = process.env.API_URL ?? "http://localhost:8787";
+// Re-apply the master menu to an org that already exists. Opt-in, so a plain
+// `pnpm seed` can never overwrite a menu the owner has edited herself.
+const SYNC_MENU =
+  process.argv.includes("--sync-menu") || process.env.SYNC_MENU === "1";
 const TOKEN = process.env.ADMIN_SEED_TOKEN;
 const OWNER_PHONE = process.env.OWNER_PHONE ?? "+60123456789";
 const OWNER_PIN = process.env.OWNER_PIN ?? "246810";
@@ -38,6 +44,7 @@ const res = await fetch(`${API_URL}/api/admin/seed`, {
     ownerName: "Puan Suriani",
     ownerPhone: OWNER_PHONE,
     ownerPin: OWNER_PIN,
+    syncMenu: SYNC_MENU,
   }),
 });
 
@@ -54,10 +61,17 @@ if (!res.ok) {
 
 const body = await res.json();
 
-if (!body.created) {
-  console.log("Already seeded — nothing to do.\n");
-} else {
+if (body.created) {
   console.log("Seeded Restoran Suriani.\n");
+} else if (body.menuSynced) {
+  console.log("Already seeded — master menu re-applied.\n");
+} else {
+  console.log(
+    "Already seeded — nothing to do.\n\n" +
+      "  Run `pnpm seed --sync-menu` to push the current master menu to\n" +
+      "  every outlet (categories and dishes no longer in seed-data.ts are\n" +
+      "  removed; 86 state and table QR codes are left alone).\n",
+  );
 }
 
 console.log(`  Organisation: ${body.orgId}`);
@@ -66,6 +80,12 @@ for (const outlet of body.outlets) {
   console.log(`    id: ${outlet.id}`);
   if (outlet.sampleQrPath) {
     console.log(`    Meja 01 QR: ${API_URL}${outlet.sampleQrPath}`);
+  }
+  if (body.menuSynced) {
+    console.log(
+      `    menu: ${outlet.categories} kategori, ${outlet.items} hidangan` +
+        ` (dibuang: ${outlet.removedCategories} kategori, ${outlet.removedItems} hidangan)`,
+    );
   }
 }
 console.log(`\n  Sign in with phone ${OWNER_PHONE} and the PIN you set.\n`);

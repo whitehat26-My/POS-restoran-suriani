@@ -18,14 +18,19 @@
  */
 import { DurableObject } from "cloudflare:workers";
 import { drizzle, type DrizzleSqliteDODatabase } from "drizzle-orm/durable-sqlite";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray } from "drizzle-orm";
 
 import * as schema from "./schema";
 import { runMigrations } from "./migrations";
 import { id, qrToken, ulid } from "../lib/ids";
 import { batchForSql } from "../lib/chunk";
 import { lineTotalSen, type Modifier, type Sen } from "../lib/money";
-import { renderKitchenTicket, type TicketLine as PrintLine } from "@suriani/escpos/templates";
+import {
+  renderKitchenTicket,
+  renderReceipt,
+  type ReceiptLine,
+  type TicketLine as PrintLine,
+} from "@suriani/escpos/templates";
 import {
   broadcast,
   type FloorTable,
@@ -60,6 +65,16 @@ export interface SeedTable {
   qrToken: string;
 }
 
+export interface SeedStation {
+  id: string;
+  name: string;
+  target: string;
+  isDefault?: boolean;
+  sortOrder?: number;
+  /** Which menu categories print here. Replaced wholesale on every apply. */
+  categoryIds?: string[];
+}
+
 export interface SeedModifierGroup {
   id: string;
   menuItemId: string;
@@ -74,6 +89,21 @@ export interface SeedModifierGroup {
     labelEn: string;
     priceDeltaSen?: Sen;
     sortOrder?: number;
+  }[];
+}
+
+/** A modifier group as the menu endpoints hand it to a client. */
+export interface MenuModifierGroup {
+  id: string;
+  nameMs: string;
+  nameEn: string;
+  minSelect: number;
+  maxSelect: number;
+  options: {
+    id: string;
+    labelMs: string;
+    labelEn: string;
+    priceDeltaSen: Sen;
   }[];
 }
 
@@ -146,25 +176,43 @@ export type PlaceOrderResult =
  * Rendering from the stored snapshot (not from live menu data) is what makes a
  * reprint of last week's docket identical even after prices changed.
  */
-function renderJob(payloadJson: string): string {
+function renderJob(payloadJson: string, outletName: string): string {
   const payload = JSON.parse(payloadJson) as {
+    kind?: string;
     stationName?: string;
     tableLabel?: string;
     orderCode?: string;
     placedAt?: number;
     reprint?: boolean;
     lines?: PrintLine[];
+    receiptLines?: ReceiptLine[];
+    totalSen?: number;
+    itemCount?: number;
+    method?: string;
   };
 
-  const bytes = renderKitchenTicket({
-    outletName: "Restoran Suriani",
-    stationName: payload.stationName ?? "Dapur",
-    tableLabel: payload.tableLabel ?? "?",
-    orderCode: payload.orderCode ?? "",
-    placedAt: new Date(payload.placedAt ?? 0),
-    lines: payload.lines ?? [],
-    reprint: payload.reprint === true,
-  });
+  const bytes =
+    payload.kind === "receipt"
+      ? renderReceipt({
+          outletName,
+          tableLabel: payload.tableLabel ?? "?",
+          orderCode: payload.orderCode ?? "",
+          paidAt: new Date(payload.placedAt ?? 0),
+          lines: payload.receiptLines ?? [],
+          totalSen: payload.totalSen ?? 0,
+          itemCount: payload.itemCount,
+          method: payload.method,
+          reprint: payload.reprint === true,
+        })
+      : renderKitchenTicket({
+          outletName,
+          stationName: payload.stationName ?? "Dapur",
+          tableLabel: payload.tableLabel ?? "?",
+          orderCode: payload.orderCode ?? "",
+          placedAt: new Date(payload.placedAt ?? 0),
+          lines: payload.lines ?? [],
+          reprint: payload.reprint === true,
+        });
 
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -309,21 +357,47 @@ export class OutletDO extends DurableObject<Env> {
     });
   }
 
-  /** Install menu and tables. Used by the seed script and by tests. */
-  async installSeed(input: {
+  /**
+   * Make this outlet's menu match the payload exactly.
+   *
+   * Upsert *and prune*: a category or dish that is no longer in the payload is
+   * removed, because leaving it behind is how an outlet ends up showing the
+   * old four headings and the new eight at the same time. Deleting is safe
+   * precisely because `order_items` snapshots the dish name and its price —
+   * last month's bill still reads correctly with the dish gone.
+   *
+   * Two things are deliberately preserved rather than overwritten:
+   *   - `is_available`, because 86-ing belongs to whoever is on shift, not to
+   *     a seed file that would silently un-86 a dish the kitchen ran out of;
+   *   - `qr_token` and every table, which this method does not touch at all.
+   *
+   * Bumps `menu_version` so a phone already sitting on the menu refetches.
+   */
+  async applyMenu(input: {
     categories: SeedCategory[];
     items: SeedItem[];
-    tables: SeedTable[];
     modifierGroups?: SeedModifierGroup[];
-    stations?: {
-      id: string;
-      name: string;
-      target: string;
-      isDefault?: boolean;
-      sortOrder?: number;
-      categoryIds?: string[];
-    }[];
-  }): Promise<{ categories: number; items: number; tables: number }> {
+    stations?: SeedStation[];
+    /**
+     * Delete what the payload no longer mentions. True by default, because
+     * "make the menu match" is what this method is for. `installSeed` turns it
+     * off: a first seed has nothing to prune, and an empty menu payload there
+     * means "just add these tables", not "empty the menu".
+     */
+    prune?: boolean;
+  }): Promise<{
+    categories: number;
+    items: number;
+    removedCategories: number;
+    removedItems: number;
+    menuVersion: number;
+  }> {
+    const categoryIds = input.categories.map((c) => c.id);
+    const itemIds = input.items.map((i) => i.id);
+    const groups = input.modifierGroups ?? [];
+    const groupIds = groups.map((g) => g.id);
+    const optionIds = groups.flatMap((g) => g.options.map((o) => o.id));
+
     for (const c of input.categories) {
       await this.db
         .insert(schema.menuCategories)
@@ -333,7 +407,10 @@ export class OutletDO extends DurableObject<Env> {
           nameEn: c.nameEn,
           sortOrder: c.sortOrder,
         })
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: schema.menuCategories.id,
+          set: { nameMs: c.nameMs, nameEn: c.nameEn, sortOrder: c.sortOrder },
+        });
     }
 
     for (const i of input.items) {
@@ -351,17 +428,23 @@ export class OutletDO extends DurableObject<Env> {
           isAvailable: i.isAvailable === false ? 0 : 1,
           prepMinutes: i.prepMinutes ?? 10,
         })
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: schema.menuItems.id,
+          // isAvailable is absent on purpose: see the note above.
+          set: {
+            categoryId: i.categoryId,
+            nameMs: i.nameMs,
+            nameEn: i.nameEn,
+            descMs: i.descMs ?? null,
+            descEn: i.descEn ?? null,
+            priceSen: i.priceSen,
+            tags: JSON.stringify(i.tags ?? []),
+            prepMinutes: i.prepMinutes ?? 10,
+          },
+        });
     }
 
-    for (const t of input.tables) {
-      await this.db
-        .insert(schema.tables)
-        .values({ id: t.id, label: t.label, qrToken: t.qrToken })
-        .onConflictDoNothing();
-    }
-
-    for (const g of input.modifierGroups ?? []) {
+    for (const g of groups) {
       await this.db
         .insert(schema.modifierGroups)
         .values({
@@ -373,7 +456,17 @@ export class OutletDO extends DurableObject<Env> {
           maxSelect: g.maxSelect ?? 1,
           sortOrder: g.sortOrder ?? 0,
         })
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: schema.modifierGroups.id,
+          set: {
+            menuItemId: g.menuItemId,
+            nameMs: g.nameMs,
+            nameEn: g.nameEn,
+            minSelect: g.minSelect ?? 0,
+            maxSelect: g.maxSelect ?? 1,
+            sortOrder: g.sortOrder ?? 0,
+          },
+        });
       for (const o of g.options) {
         await this.db
           .insert(schema.modifierOptions)
@@ -385,7 +478,16 @@ export class OutletDO extends DurableObject<Env> {
             priceDeltaSen: o.priceDeltaSen ?? 0,
             sortOrder: o.sortOrder ?? 0,
           })
-          .onConflictDoNothing();
+          .onConflictDoUpdate({
+            target: schema.modifierOptions.id,
+            set: {
+              groupId: g.id,
+              labelMs: o.labelMs,
+              labelEn: o.labelEn,
+              priceDeltaSen: o.priceDeltaSen ?? 0,
+              sortOrder: o.sortOrder ?? 0,
+            },
+          });
       }
     }
 
@@ -400,13 +502,154 @@ export class OutletDO extends DurableObject<Env> {
           isDefault: station.isDefault ? 1 : 0,
           sortOrder: station.sortOrder ?? 0,
         })
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: schema.printStations.id,
+          // `enabled` is left alone: a station switched off at the till stays
+          // off. Routing is what this call owns.
+          set: {
+            name: station.name,
+            target: station.target,
+            isDefault: station.isDefault ? 1 : 0,
+            sortOrder: station.sortOrder ?? 0,
+          },
+        });
+
+      // Routing is replaced wholesale rather than merged. Categories move
+      // between stations; a leftover row would quietly print nasi at the
+      // drinks counter forever.
+      await this.db
+        .delete(schema.stationRoutes)
+        .where(eq(schema.stationRoutes.stationId, station.id));
       for (const categoryId of station.categoryIds ?? []) {
         await this.db
           .insert(schema.stationRoutes)
-          .values({ stationId: station.id, categoryId })
-          .onConflictDoNothing();
+          .values({ stationId: station.id, categoryId });
       }
+    }
+
+    // Prune, in dependency order: options, groups, items, categories.
+    const removed =
+      input.prune === false
+        ? { categories: 0, items: 0 }
+        : await this.pruneMenu({ categoryIds, itemIds, groupIds, optionIds });
+
+    const settings = await this.getSettings();
+    const menuVersion = (settings.menuVersion ?? 1) + 1;
+    await this.db
+      .update(schema.settings)
+      .set({ menuVersion, updatedAt: Date.now() })
+      .where(eq(schema.settings.id, 1));
+
+    broadcast(this.ctx, { type: "menu.changed", menuVersion });
+
+    return {
+      categories: input.categories.length,
+      items: input.items.length,
+      removedCategories: removed.categories,
+      removedItems: removed.items,
+      menuVersion,
+    };
+  }
+
+  /** Everything the payload no longer mentions, deleted in dependency order. */
+  private async pruneMenu(keep: {
+    categoryIds: string[];
+    itemIds: string[];
+    groupIds: string[];
+    optionIds: string[];
+  }): Promise<{ categories: number; items: number }> {
+    const staleItems = (await this.db.select().from(schema.menuItems)).filter(
+      (i) => !keep.itemIds.includes(i.id),
+    );
+    const staleCategories = (
+      await this.db.select().from(schema.menuCategories)
+    ).filter((c) => !keep.categoryIds.includes(c.id));
+
+    // Options first, then their groups, so nothing is ever briefly orphaned.
+    const staleOptions = (
+      await this.db.select().from(schema.modifierOptions)
+    ).filter((o) => !keep.optionIds.includes(o.id));
+    for (const batch of batchForSql(staleOptions, 1)) {
+      await this.db
+        .delete(schema.modifierOptions)
+        .where(
+          inArray(
+            schema.modifierOptions.id,
+            batch.map((o) => o.id),
+          ),
+        );
+    }
+
+    const staleGroups = (
+      await this.db.select().from(schema.modifierGroups)
+    ).filter(
+      (g) => !keep.groupIds.includes(g.id) || !keep.itemIds.includes(g.menuItemId),
+    );
+    for (const batch of batchForSql(staleGroups, 1)) {
+      await this.db
+        .delete(schema.modifierGroups)
+        .where(
+          inArray(
+            schema.modifierGroups.id,
+            batch.map((g) => g.id),
+          ),
+        );
+    }
+
+    for (const batch of batchForSql(staleItems, 1)) {
+      await this.db
+        .delete(schema.menuItems)
+        .where(
+          inArray(
+            schema.menuItems.id,
+            batch.map((i) => i.id),
+          ),
+        );
+    }
+
+    for (const batch of batchForSql(staleCategories, 1)) {
+      const ids = batch.map((c) => c.id);
+      await this.db
+        .delete(schema.stationRoutes)
+        .where(inArray(schema.stationRoutes.categoryId, ids));
+      await this.db
+        .delete(schema.menuCategories)
+        .where(inArray(schema.menuCategories.id, ids));
+    }
+
+    return { categories: staleCategories.length, items: staleItems.length };
+  }
+
+  /** Install menu and tables. Used by the seed script and by tests. */
+  async installSeed(input: {
+    categories: SeedCategory[];
+    items: SeedItem[];
+    tables: SeedTable[];
+    modifierGroups?: SeedModifierGroup[];
+    stations?: SeedStation[];
+    /** This branch's name, so its printed slips carry it and not a default. */
+    outletName?: string;
+  }): Promise<{ categories: number; items: number; tables: number }> {
+    if (input.outletName) {
+      await this.updateSettings({ outletName: input.outletName });
+    }
+
+    await this.applyMenu({
+      categories: input.categories,
+      items: input.items,
+      modifierGroups: input.modifierGroups,
+      stations: input.stations,
+      prune: false,
+    });
+
+    // Tables are insert-only, always. `table_sessions.table_id` points at
+    // these rows, so pruning them would turn "Meja 05" into "?" in every
+    // historical bill this outlet has ever taken.
+    for (const t of input.tables) {
+      await this.db
+        .insert(schema.tables)
+        .values({ id: t.id, label: t.label, qrToken: t.qrToken })
+        .onConflictDoNothing();
     }
 
     return {
@@ -428,7 +671,7 @@ export class OutletDO extends DurableObject<Env> {
       list.push(o);
       optionsByGroup.set(o.groupId, list);
     }
-    const groupsByItem = new Map<string, unknown[]>();
+    const groupsByItem = new Map<string, MenuModifierGroup[]>();
     for (const g of [...groups].sort((a, b) => a.sortOrder - b.sortOrder)) {
       const list = groupsByItem.get(g.menuItemId) ?? [];
       list.push({
@@ -819,6 +1062,7 @@ export class OutletDO extends DurableObject<Env> {
     return (
       rows[0] ?? {
         id: 1,
+        outletName: null,
         wifiSsid: null,
         wifiPassword: null,
         localOrderUrl: null,
@@ -829,6 +1073,7 @@ export class OutletDO extends DurableObject<Env> {
   }
 
   async updateSettings(input: {
+    outletName?: string | null;
     wifiSsid?: string | null;
     wifiPassword?: string | null;
     localOrderUrl?: string | null;
@@ -836,6 +1081,9 @@ export class OutletDO extends DurableObject<Env> {
     await this.db
       .update(schema.settings)
       .set({
+        ...(input.outletName !== undefined
+          ? { outletName: input.outletName }
+          : {}),
         ...(input.wifiSsid !== undefined ? { wifiSsid: input.wifiSsid } : {}),
         ...(input.wifiPassword !== undefined
           ? { wifiPassword: input.wifiPassword }
@@ -1217,6 +1465,11 @@ export class OutletDO extends DurableObject<Env> {
     return rows.sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
+  /** Which menu category prints where. */
+  async listStationRoutes() {
+    return this.db.select().from(schema.stationRoutes);
+  }
+
   /**
    * Group an order's lines by station and queue one docket per station.
    *
@@ -1324,6 +1577,9 @@ export class OutletDO extends DurableObject<Env> {
       .sort((a, b) => a.createdAt - b.createdAt)
       .slice(0, limit);
 
+    const outletName =
+      (await this.getSettings()).outletName ?? "Restoran Suriani";
+
     const leaseUntil = now + 30_000;
     const out: {
       id: string;
@@ -1343,7 +1599,7 @@ export class OutletDO extends DurableObject<Env> {
         target: job.target,
         stationId: job.stationId,
         attempts: job.attempts,
-        escposBase64: renderJob(job.payload),
+        escposBase64: renderJob(job.payload, outletName),
       });
     }
 
@@ -1681,6 +1937,7 @@ export class OutletDO extends DurableObject<Env> {
       : [];
 
     let totalSen = 0;
+    let itemCount = 0;
     const detail = live
       .sort((a, b) => a.placedAt - b.placedAt)
       .map((o) => {
@@ -1690,6 +1947,7 @@ export class OutletDO extends DurableObject<Env> {
             const modifiers = JSON.parse(li.modifiers) as Modifier[];
             const lineSen = lineTotalSen(li.unitPriceSen, li.qty, modifiers);
             totalSen += lineSen;
+            itemCount += li.qty;
             return {
               nameMs: li.nameMs,
               nameEn: li.nameEn,
@@ -1709,8 +1967,103 @@ export class OutletDO extends DurableObject<Env> {
         openedAt: session.openedAt,
         status: session.status,
         totalSen,
+        /** How many plates are on the table — the counter asks this first. */
+        itemCount,
         orders: detail,
       },
+    };
+  }
+
+  /**
+   * Print the bill for an open table.
+   *
+   * Rendered from the session as it stands, at the counter station. `method`
+   * is left unset here because nothing has been paid yet: the customer asked
+   * for the bill, and Phase 6 will call this again with a method once money
+   * has actually changed hands.
+   */
+  async queueReceipt(input: {
+    sessionId: string;
+    method?: string;
+    userId?: string;
+  }): Promise<
+    | { ok: true; jobId: string; totalSen: Sen; itemCount: number }
+    | { ok: false; error: "not_found" | "no_station" }
+  > {
+    const session = (
+      await this.db
+        .select()
+        .from(schema.tableSessions)
+        .where(eq(schema.tableSessions.id, input.sessionId))
+        .limit(1)
+    )[0];
+    if (!session) return { ok: false, error: "not_found" };
+
+    const detail = await this.getSessionDetail(session.tableId);
+    if (!detail?.session || detail.session.id !== session.id) {
+      return { ok: false, error: "not_found" };
+    }
+
+    const stations = (await this.listStations()).filter((s) => s.enabled === 1);
+    // Counter first, then the default station: a restaurant with one printer
+    // still gets its bill rather than nothing at all.
+    const station =
+      stations.find((s) => s.target === "counter") ??
+      stations.find((s) => s.isDefault === 1) ??
+      stations[0];
+    if (!station) return { ok: false, error: "no_station" };
+
+    const receiptLines: ReceiptLine[] = detail.session.orders.flatMap((o) =>
+      o.lines.map((l) => ({
+        qty: l.qty,
+        name: l.nameMs,
+        modifiers: l.modifiers.map((m) => ({
+          label: m.label,
+          priceDeltaSen: m.priceDeltaSen,
+        })),
+        lineSen: l.lineSen,
+      })),
+    );
+
+    const jobId = id("pj");
+    const now = Date.now();
+    await this.db.insert(schema.printJobs).values({
+      id: jobId,
+      orderId: null,
+      stationId: station.id,
+      target: station.target,
+      payload: JSON.stringify({
+        kind: "receipt",
+        tableLabel: detail.table.label,
+        orderCode: `#${session.id.slice(-5).toUpperCase()}`,
+        placedAt: now,
+        receiptLines,
+        totalSen: detail.session.totalSen,
+        itemCount: detail.session.itemCount,
+        ...(input.method ? { method: input.method } : {}),
+      }),
+      status: "queued",
+      attempts: 0,
+      nextAttemptAt: 0,
+      firstQueuedAt: now,
+      createdAt: now,
+    });
+
+    await this.audit(
+      "receipt.printed",
+      JSON.stringify({
+        sessionId: session.id,
+        totalSen: detail.session.totalSen,
+      }),
+      input.userId,
+    );
+    broadcast(this.ctx, { type: "print.queued", orderId: null });
+
+    return {
+      ok: true,
+      jobId,
+      totalSen: detail.session.totalSen,
+      itemCount: detail.session.itemCount,
     };
   }
 
@@ -1830,6 +2183,249 @@ export class OutletDO extends DurableObject<Env> {
             })),
           }
         : null,
+    };
+  }
+
+  /* ---------------------------------------------------------------- *
+   * The daily record
+   *
+   * A day is derived from the orders themselves rather than from a rollup
+   * table written at closing time. That costs a range scan, and buys three
+   * things worth more than the scan: the number is right retroactively, it
+   * cannot drift from the orders it claims to summarise, and there is no
+   * nightly job whose silent failure leaves a hole in the books.
+   *
+   * Days are bucketed in the outlet's own timezone. An order at 8pm belongs
+   * to tonight's takings, not to tomorrow's, and UTC would put it there.
+   * ---------------------------------------------------------------- */
+
+  /** Longest window a single request may ask for. */
+  private static readonly MAX_REPORT_DAYS = 92;
+
+  /** YYYY-MM-DD in the restaurant's own timezone. */
+  private static localDate(at: number, timeZone: string): string {
+    // en-CA formats as YYYY-MM-DD, which sorts correctly as a string.
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(at));
+  }
+
+  private static localHour(at: number, timeZone: string): number {
+    return Number(
+      new Intl.DateTimeFormat("en-GB", {
+        timeZone,
+        hour: "2-digit",
+        hour12: false,
+      }).format(new Date(at)),
+    );
+  }
+
+  /**
+   * Live (non-voided) orders in a window, with their lines and money already
+   * resolved. Every report below is a fold over this.
+   */
+  private async ordersSince(fromMs: number) {
+    const rows = await this.db
+      .select()
+      .from(schema.orders)
+      .where(gte(schema.orders.placedAt, fromMs));
+    const live = rows.filter((o) => o.status !== "voided");
+    if (live.length === 0) return [];
+
+    const items: (typeof schema.orderItems.$inferSelect)[] = [];
+    for (const batch of batchForSql(live, 1)) {
+      items.push(
+        ...(await this.db
+          .select()
+          .from(schema.orderItems)
+          .where(
+            inArray(
+              schema.orderItems.orderId,
+              batch.map((o) => o.id),
+            ),
+          )),
+      );
+    }
+
+    const linesByOrder = new Map<string, typeof items>();
+    for (const li of items) {
+      const list = linesByOrder.get(li.orderId) ?? [];
+      list.push(li);
+      linesByOrder.set(li.orderId, list);
+    }
+
+    return live.map((o) => {
+      const lines = (linesByOrder.get(o.id) ?? []).map((li) => ({
+        menuItemId: li.menuItemId,
+        nameMs: li.nameMs,
+        nameEn: li.nameEn,
+        qty: li.qty,
+        lineSen: lineTotalSen(
+          li.unitPriceSen,
+          li.qty,
+          JSON.parse(li.modifiers) as Modifier[],
+        ),
+      }));
+      return {
+        id: o.id,
+        sessionId: o.sessionId,
+        placedAt: o.placedAt,
+        source: o.source,
+        lines,
+        totalSen: lines.reduce((sum, l) => sum + l.lineSen, 0),
+      };
+    });
+  }
+
+  /** One row per day, newest first. The owner's history screen. */
+  async dailySales(input: { timeZone?: string; days?: number }): Promise<{
+    days: {
+      date: string;
+      salesSen: Sen;
+      orderCount: number;
+      billCount: number;
+      itemCount: number;
+    }[];
+  }> {
+    const timeZone = input.timeZone ?? "Asia/Kuala_Lumpur";
+    const days = Math.min(
+      Math.max(input.days ?? 30, 1),
+      OutletDO.MAX_REPORT_DAYS,
+    );
+    const orders = await this.ordersSince(Date.now() - days * 86_400_000);
+
+    const byDate = new Map<
+      string,
+      {
+        date: string;
+        salesSen: Sen;
+        orderCount: number;
+        sessions: Set<string>;
+        itemCount: number;
+      }
+    >();
+    for (const o of orders) {
+      const date = OutletDO.localDate(o.placedAt, timeZone);
+      const day = byDate.get(date) ?? {
+        date,
+        salesSen: 0,
+        orderCount: 0,
+        sessions: new Set<string>(),
+        itemCount: 0,
+      };
+      day.salesSen += o.totalSen;
+      day.orderCount += 1;
+      day.sessions.add(o.sessionId);
+      day.itemCount += o.lines.reduce((sum, l) => sum + l.qty, 0);
+      byDate.set(date, day);
+    }
+
+    return {
+      days: [...byDate.values()]
+        .map(({ sessions, ...rest }) => ({ ...rest, billCount: sessions.size }))
+        .sort((a, b) => (a.date < b.date ? 1 : -1)),
+    };
+  }
+
+  /** One day opened up: where the money came from and when. */
+  async daySummary(input: { date: string; timeZone?: string }): Promise<{
+    date: string;
+    salesSen: Sen;
+    orderCount: number;
+    billCount: number;
+    itemCount: number;
+    byHour: { hour: number; salesSen: Sen; orderCount: number }[];
+    byCategory: { categoryId: string; nameMs: string; nameEn: string; salesSen: Sen; qty: number }[];
+    byItem: { menuItemId: string; nameMs: string; nameEn: string; salesSen: Sen; qty: number }[];
+  }> {
+    const timeZone = input.timeZone ?? "Asia/Kuala_Lumpur";
+
+    // A day anywhere on earth is inside a ±36h window around midnight UTC of
+    // that calendar date, so scan wide and filter by the local date exactly.
+    const anchor = Date.parse(`${input.date}T00:00:00Z`);
+    const orders = (
+      await this.ordersSince(Number.isNaN(anchor) ? Date.now() : anchor - 129_600_000)
+    ).filter((o) => OutletDO.localDate(o.placedAt, timeZone) === input.date);
+
+    const categoryOf = new Map<string, string>();
+    const categoryNames = new Map<string, { nameMs: string; nameEn: string }>();
+    if (orders.length) {
+      for (const m of await this.db.select().from(schema.menuItems)) {
+        categoryOf.set(m.id, m.categoryId);
+      }
+      for (const c of await this.db.select().from(schema.menuCategories)) {
+        categoryNames.set(c.id, { nameMs: c.nameMs, nameEn: c.nameEn });
+      }
+    }
+
+    const hours = new Map<number, { hour: number; salesSen: Sen; orderCount: number }>();
+    const cats = new Map<
+      string,
+      { categoryId: string; nameMs: string; nameEn: string; salesSen: Sen; qty: number }
+    >();
+    const dishes = new Map<
+      string,
+      { menuItemId: string; nameMs: string; nameEn: string; salesSen: Sen; qty: number }
+    >();
+    const sessions = new Set<string>();
+    let salesSen = 0;
+    let itemCount = 0;
+
+    for (const o of orders) {
+      sessions.add(o.sessionId);
+      salesSen += o.totalSen;
+
+      const hour = OutletDO.localHour(o.placedAt, timeZone);
+      const bucket = hours.get(hour) ?? { hour, salesSen: 0, orderCount: 0 };
+      bucket.salesSen += o.totalSen;
+      bucket.orderCount += 1;
+      hours.set(hour, bucket);
+
+      for (const l of o.lines) {
+        itemCount += l.qty;
+
+        const dish = dishes.get(l.menuItemId) ?? {
+          menuItemId: l.menuItemId,
+          nameMs: l.nameMs,
+          nameEn: l.nameEn,
+          salesSen: 0,
+          qty: 0,
+        };
+        dish.salesSen += l.lineSen;
+        dish.qty += l.qty;
+        dishes.set(l.menuItemId, dish);
+
+        // The dish's category *today*. A dish that has since been deleted
+        // falls into "lain-lain" rather than vanishing from the total.
+        const categoryId = categoryOf.get(l.menuItemId) ?? "lain";
+        const names = categoryNames.get(categoryId) ?? {
+          nameMs: "Lain-lain",
+          nameEn: "Other",
+        };
+        const cat = cats.get(categoryId) ?? {
+          categoryId,
+          ...names,
+          salesSen: 0,
+          qty: 0,
+        };
+        cat.salesSen += l.lineSen;
+        cat.qty += l.qty;
+        cats.set(categoryId, cat);
+      }
+    }
+
+    return {
+      date: input.date,
+      salesSen,
+      orderCount: orders.length,
+      billCount: sessions.size,
+      itemCount,
+      byHour: [...hours.values()].sort((a, b) => a.hour - b.hour),
+      byCategory: [...cats.values()].sort((a, b) => b.salesSen - a.salesSen),
+      byItem: [...dishes.values()].sort((a, b) => b.salesSen - a.salesSen),
     };
   }
 

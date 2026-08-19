@@ -233,6 +233,24 @@ export const MIGRATIONS: Migration[] = [
       `CREATE INDEX idx_print_jobs_claimable ON print_jobs (status, next_attempt_at)`,
     ],
   },
+  {
+    // Two small things the counter and the owner needed.
+    //
+    // `outlet_name` because the print renderer had the restaurant's name
+    // hardcoded — which puts one tenant's brand on every other tenant's
+    // paper, and a receipt makes that impossible to miss.
+    //
+    // The index because the daily record derives a day from the orders
+    // themselves rather than from a rollup table. That is deliberate: a
+    // derived day is right retroactively and cannot drift from the orders it
+    // summarises, but it does mean reading a date range, so the range needs
+    // an index to stay cheap as a year of service piles up.
+    version: 6,
+    statements: [
+      `ALTER TABLE settings ADD COLUMN outlet_name TEXT`,
+      `CREATE INDEX idx_orders_placed_at ON orders (placed_at)`,
+    ],
+  },
 ];
 
 /** Highest version this build knows how to migrate to. */

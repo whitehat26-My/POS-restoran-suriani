@@ -3,7 +3,7 @@ import { formatMYR } from "@suriani/core/money";
 
 import { api, type BillSheet as Bill } from "../api";
 
-/** One table's open bill: every order, every line, close when settled. */
+/** One table's open bill: what is on it, printed for the customer, then closed. */
 export function BillSheet({
   outletId,
   tableId,
@@ -17,10 +17,26 @@ export function BillSheet({
 }) {
   const [bill, setBill] = useState<Bill | null>(null);
   const [closing, setClosing] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   useEffect(() => {
     api.bill(outletId, tableId).then(setBill, () => onSay("Gagal memuat bil"));
   }, [outletId, tableId, onSay]);
+
+  const print = async () => {
+    if (!bill?.session) return;
+    setPrinting(true);
+    try {
+      await api.printReceipt(outletId, bill.session.id);
+      onSay(`Bil ${bill.table.label} dihantar ke pencetak`);
+    } catch {
+      // The printer-health pill and the red banner carry the detail; this
+      // toast only has to tell the cashier the tap did not land.
+      onSay("Gagal menghantar bil ke pencetak");
+    } finally {
+      setPrinting(false);
+    }
+  };
 
   const close = async () => {
     if (!bill?.session) return;
@@ -47,6 +63,27 @@ export function BillSheet({
           <span className="sheet-title">{bill?.table.label ?? "…"}</span>
           <button className="sheet-x" onClick={onClose}>×</button>
         </div>
+
+        {bill?.session && (
+          <div className="bill-strip" data-testid="bill-strip">
+            <span className="bill-strip-count num">
+              {bill.session.itemCount}
+            </span>
+            <span className="bill-strip-label">
+              {bill.session.itemCount === 1 ? "hidangan" : "hidangan"}
+              <small>
+                {bill.session.orders.length} pesanan ·{" "}
+                {bill.session.status === "bill_requested"
+                  ? "minta bil"
+                  : "masih makan"}
+              </small>
+            </span>
+            <span className="bill-strip-total num">
+              {formatMYR(bill.session.totalSen)}
+            </span>
+          </div>
+        )}
+
         <div className="sheet-scroll" data-testid="bill">
           {bill && !bill.session && <p className="empty">Tiada bil terbuka.</p>}
           {bill?.session?.orders.map((o) => (
@@ -90,6 +127,14 @@ export function BillSheet({
         {bill?.session && (
           <div className="sheet-foot">
             <button className="btn btn-quiet" onClick={onClose}>Kembali</button>
+            <button
+              className="btn btn-quiet"
+              disabled={printing}
+              data-testid="print-receipt"
+              onClick={() => void print()}
+            >
+              {printing ? "Menghantar…" : "Cetak resit"}
+            </button>
             <button className="btn btn-accent" disabled={closing} onClick={() => void close()}>
               Tutup bil
             </button>

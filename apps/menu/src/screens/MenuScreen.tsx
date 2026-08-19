@@ -61,7 +61,10 @@ export function MenuScreen({
         ))}
       </nav>
 
+      <p className="press-hint">{t("press_hint")}</p>
+
       <div className="menu-list">
+        {items.length === 0 && <p className="empty-cat">{t("cat_empty")}</p>}
         {items.map((item) => {
           const out = item.isAvailable === 0;
           return (

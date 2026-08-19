@@ -165,6 +165,19 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .sheet-foot { display: flex; gap: var(--s2); margin-top: var(--s4); }
 .sheet-foot .btn { flex: 1; }
 
+/* What the counter looks at first: how much food is on that table, and what
+   it comes to. Both numbers big enough to read across a counter. */
+.bill-strip {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s3); margin-bottom: var(--s2);
+  background: var(--pos-raised); border: 1px solid var(--pos-edge);
+  border-radius: var(--r-md);
+}
+.bill-strip-count { font-size: var(--t-xl); font-weight: 800; line-height: 1; letter-spacing: -.03em; }
+.bill-strip-label { flex: 1; display: flex; flex-direction: column; font-size: var(--t-sm); }
+.bill-strip-label small { color: var(--pos-muted); font-size: var(--t-xs); }
+.bill-strip-total { font-size: var(--t-lg); font-weight: 800; letter-spacing: -.02em; }
+
 .opt-row {
   display: flex; align-items: center; gap: var(--s2); width: 100%;
   padding: 9px var(--s3); border-radius: var(--r-sm); margin-bottom: 6px;
@@ -187,6 +200,46 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 @media (max-width: 900px) {
   .body { grid-template-columns: 1fr; overflow-y: auto; }
   .col { border-right: 0; border-bottom: 1px solid var(--pos-edge); }
+}
+
+/* ---- the owner's daily record ----
+   Two columns instead of the till's three, and it has to work at phone width:
+   the owner reads yesterday's takings on her phone, not at the counter. */
+.body-records { grid-template-columns: .8fr 1.2fr; }
+.pill[aria-pressed="true"] { background: var(--enamel); border-color: var(--enamel-lift); color: #fff; }
+
+.day-row {
+  display: flex; align-items: center; gap: var(--s3); width: 100%; text-align: left;
+  padding: 10px var(--s3); border-radius: var(--r-md); margin-bottom: 6px;
+  border: 1.5px solid transparent; background: var(--pos-raised);
+}
+.day-row[aria-pressed="true"] { border-color: var(--enamel-lift); }
+.day-date { flex: 1; display: flex; flex-direction: column; font-size: var(--t-sm); font-weight: 600; }
+.day-date small { color: var(--pos-muted); font-size: var(--t-xs); font-weight: 500; }
+.day-sales { font-weight: 800; font-size: var(--t-sm); }
+.day-total {
+  display: flex; justify-content: space-between; font-weight: 800;
+  padding-top: var(--s3); margin-top: var(--s2); border-top: 1px solid var(--pos-edge);
+}
+
+.stat-row { display: flex; gap: var(--s2); margin: var(--s3) 0 var(--s2); }
+.stat {
+  flex: 1; display: flex; flex-direction: column; gap: 2px;
+  padding: var(--s3); border-radius: var(--r-md);
+  background: var(--pos-raised); border: 1px solid var(--pos-edge);
+}
+.stat-label { font-size: var(--t-xs); color: var(--pos-muted); font-weight: 600; }
+.stat-value { font-size: var(--t-lg); font-weight: 800; letter-spacing: -.02em; }
+.stat-note { font-size: var(--t-xs); color: var(--pos-muted); margin-bottom: var(--s2); }
+
+.hour-row { display: flex; align-items: center; gap: var(--s2); padding: 3px 0; font-size: var(--t-xs); }
+.hour-label { color: var(--pos-muted); width: 44px; flex: none; }
+.hour-bar { flex: 1; height: 10px; border-radius: var(--r-full); background: var(--pos-raised); overflow: hidden; }
+.hour-fill { display: block; height: 100%; border-radius: var(--r-full); background: var(--enamel-lift); }
+.hour-sales { width: 68px; text-align: right; flex: none; }
+
+@media (max-width: 900px) {
+  .body-records { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }

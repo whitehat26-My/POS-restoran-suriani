@@ -21,7 +21,7 @@ const decode = (b64: string) =>
     Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0)),
   );
 
-/** A tenant with the full menu and both print stations routed. */
+/** A tenant with the full menu and all three print stations routed. */
 async function withStations(name: string): Promise<Tenant> {
   const t = await createTenant(name);
   const stub = env.OUTLET.get(env.OUTLET.idFromName(t.doId));
@@ -31,6 +31,7 @@ async function withStations(name: string): Promise<Tenant> {
     tables: [],
     modifierGroups: SEED_MODIFIER_GROUPS,
     stations: SEED_STATIONS,
+    outletName: `${name} Cawangan`,
   });
   return t;
 }
@@ -379,5 +380,145 @@ describe("agent credentials", () => {
       },
     );
     expect(res.status).toBe(403);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The counter bill
+ * ------------------------------------------------------------------ */
+
+describe("counter receipt", () => {
+  it("prints a bill, not a kitchen docket, at the counter station", async () => {
+    const t = await withStations("Suriani");
+    const token = await registerAgent(t);
+
+    await order(t, [
+      { menuItemId: "itm_nasilemak", qty: 2, modifierOptionIds: ["mo_nl_telur"] },
+    ]);
+    // Drain the kitchen dockets so what is left is unambiguous.
+    for (const job of await claim(t, token)) {
+      await SELF.fetch(`https://api.test/api/agent/jobs/${job.id}/ack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...agentAuth(token) },
+        body: JSON.stringify({ ok: true, transport: "tcp" }),
+      });
+    }
+
+    const floor = (await (
+      await SELF.fetch(`https://api.test/api/outlets/${t.outletId}/floor`, {
+        headers: auth(t),
+      })
+    ).json()) as { tables: { id: string; session: { id: string } | null }[] };
+    const sessionId = floor.tables.find((tb) => tb.session)!.session!.id;
+
+    const res = await SELF.fetch(
+      `https://api.test/api/outlets/${t.outletId}/sessions/${sessionId}/receipt`,
+      { method: "POST", headers: auth(t) },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, totalSen: 2700, itemCount: 2 });
+
+    const jobs = await claim(t, token);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]!.target).toBe("counter");
+
+    const slip = decode(jobs[0]!.escposBase64);
+    expect(slip).toContain("BIL");
+    expect(slip).toContain("Nasi Lemak Ayam Berempah");
+    expect(slip).toContain("Tambah telur");
+    expect(slip).toContain("27.00");
+    expect(slip).toContain("Sila jelaskan di kaunter");
+    // Nothing has been paid, so nothing claims to have been.
+    expect(slip).not.toContain("TUNAI");
+  });
+
+  it("carries the outlet's own name, never a default", async () => {
+    const t = await withStations("Warung Bangi");
+    const token = await registerAgent(t);
+    await order(t, [{ menuItemId: "itm_kopi", qty: 1 }]);
+
+    const jobs = await claim(t, token);
+    const slip = decode(jobs[0]!.escposBase64);
+    expect(slip).toContain("Warung Bangi Cawangan");
+    expect(slip).not.toContain("Restoran Suriani");
+  });
+
+  it("reprints a bill as a bill, stamped as a copy", async () => {
+    const t = await withStations("Suriani");
+    const token = await registerAgent(t);
+    await order(t, [{ menuItemId: "itm_roti", qty: 1 }]);
+    for (const job of await claim(t, token)) {
+      await SELF.fetch(`https://api.test/api/agent/jobs/${job.id}/ack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...agentAuth(token) },
+        body: JSON.stringify({ ok: true, transport: "tcp" }),
+      });
+    }
+
+    const floor = (await (
+      await SELF.fetch(`https://api.test/api/outlets/${t.outletId}/floor`, {
+        headers: auth(t),
+      })
+    ).json()) as { tables: { session: { id: string } | null }[] };
+    const sessionId = floor.tables.find((tb) => tb.session)!.session!.id;
+
+    await SELF.fetch(
+      `https://api.test/api/outlets/${t.outletId}/sessions/${sessionId}/receipt`,
+      { method: "POST", headers: auth(t) },
+    );
+    const [billJob] = await claim(t, token);
+    await SELF.fetch(`https://api.test/api/agent/jobs/${billJob!.id}/ack`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...agentAuth(token) },
+      body: JSON.stringify({ ok: true, transport: "tcp" }),
+    });
+
+    await SELF.fetch(
+      `https://api.test/api/outlets/${t.outletId}/print/jobs/${billJob!.id}/reprint`,
+      { method: "POST", headers: auth(t) },
+    );
+
+    const [copy] = await claim(t, token);
+    const slip = decode(copy!.escposBase64);
+    expect(slip).toContain("SALINAN");
+    expect(slip).toContain("BIL");
+    // A reprint must not turn a receipt back into something the kitchen cooks.
+    expect(slip).not.toContain("DAPUR");
+  });
+
+  it("answers 404 for a session in another outlet", async () => {
+    const a = await withStations("Suriani A");
+    const b = await withStations("Suriani B");
+    await order(b, [{ menuItemId: "itm_kopi", qty: 1 }]);
+
+    const floor = (await (
+      await SELF.fetch(`https://api.test/api/outlets/${b.outletId}/floor`, {
+        headers: auth(b),
+      })
+    ).json()) as { tables: { session: { id: string } | null }[] };
+    const sessionId = floor.tables.find((tb) => tb.session)!.session!.id;
+
+    const res = await SELF.fetch(
+      `https://api.test/api/outlets/${a.outletId}/sessions/${sessionId}/receipt`,
+      { method: "POST", headers: auth(a) },
+    );
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("a request on a dish with no options", () => {
+  it("reaches the cook", async () => {
+    const t = await withStations("Suriani");
+    const token = await registerAgent(t);
+
+    // Kopi O Ais has no modifier groups at all. Half the menu is like this,
+    // and a note left on one of those dishes must not fall on the floor.
+    await order(t, [
+      { menuItemId: "itm_kopi", qty: 1, notes: "kurang manis, bungkus" },
+    ]);
+
+    const jobs = await claim(t, token);
+    expect(jobs).toHaveLength(1);
+    expect(decode(jobs[0]!.escposBase64)).toContain("kurang manis, bungkus");
   });
 });
