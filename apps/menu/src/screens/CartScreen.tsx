@@ -11,6 +11,7 @@ export function CartScreen({
   cart,
   sending,
   onRemove,
+  onQty,
   onBack,
   onSubmit,
 }: {
@@ -20,6 +21,7 @@ export function CartScreen({
   cart: CartState;
   sending: boolean;
   onRemove: (lineId: string) => void;
+  onQty: (lineId: string, qty: number) => void;
   onBack: () => void;
   onSubmit: () => void;
 }) {
@@ -64,12 +66,32 @@ export function CartScreen({
                     {[...optionLabels, line.notes].filter(Boolean).join(" · ")}
                   </div>
                 )}
-                <button
-                  className="line-remove"
-                  onClick={() => onRemove(line.lineId)}
-                >
-                  {t("remove")}
-                </button>
+                {/* Getting the count wrong is as common as getting the dish
+                    wrong, and deleting the line to re-add it loses the options
+                    and the note that went with it. */}
+                <div className="line-actions">
+                  <div className="line-stepper">
+                    <button
+                      aria-label={t("qty_less")}
+                      onClick={() => onQty(line.lineId, line.qty - 1)}
+                    >
+                      −
+                    </button>
+                    <span className="num">{line.qty}</span>
+                    <button
+                      aria-label={t("qty_more")}
+                      onClick={() => onQty(line.lineId, line.qty + 1)}
+                    >
+                      +
+                    </button>
+                  </div>
+                  <button
+                    className="line-remove"
+                    onClick={() => onRemove(line.lineId)}
+                  >
+                    {t("remove")}
+                  </button>
+                </div>
               </div>
               <span className="line-sen num">{formatMYR(lineSen)}</span>
             </div>

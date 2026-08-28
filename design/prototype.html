@@ -527,6 +527,24 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
   color: var(--ink); font-size: 13px; line-height: 1.5;
 }
 .frozen-note code { font-family: var(--mono, monospace); font-size: 12px; }
+
+/* The undo. Above the cart bar, never over it: undoing a mistake and going to
+   the cart must not be the same tap in the same place. */
+.undo-bar {
+  position: fixed; left: 50%; bottom: 116px; z-index: 60;
+  display: flex; align-items: center; gap: 12px;
+  max-width: min(88vw, 420px); padding: 10px 12px 10px 16px;
+  border-radius: 999px; background: var(--ink); color: var(--paper);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 22%);
+  transform: translate(-50%, 16px); opacity: 0; pointer-events: none;
+  transition: transform .22s cubic-bezier(.2,.9,.3,1.2), opacity .22s ease;
+}
+.undo-bar.is-up { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+.undo-label { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.undo-action {
+  flex: none; padding: 7px 15px; border-radius: 999px;
+  background: var(--paper); color: var(--ink); font-size: 13px; font-weight: 800;
+}
 </style>
 
 <div class="frozen-note">
@@ -731,6 +749,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 
 </div>
 
+<div class="undo-bar" id="undoBar" role="status"></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -1269,6 +1288,26 @@ function applyI18n() {
 }
 
 let toastTimer;
+/* Undo where the mistake happens. Tapping the wrong dish is the commonest
+   thing a customer does on this screen; without this the fix is three taps
+   away inside a cart they have to think to open. */
+let undoTimer;
+function showUndo(id) {
+  const m = MENU.find(x => x.id === id);
+  if (!m) return;
+  const el = $("#undoBar");
+  el.innerHTML =
+    `<span class="undo-label">${lang === "ms" ? "Ditambah" : "Added"}: ${m[lang]}</span>` +
+    `<button class="undo-action" data-undo="${id}">${lang === "ms" ? "Batal" : "Undo"}</button>`;
+  el.classList.add("is-up");
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(hideUndo, 6000);
+}
+function hideUndo() {
+  clearTimeout(undoTimer);
+  $("#undoBar").classList.remove("is-up");
+}
+
 function toast(msg) {
   const el = $("#toast");
   el.textContent = msg;
@@ -1291,6 +1330,16 @@ document.addEventListener("click", e => {
   if (add) {
     const id = add.dataset.add;
     state.cart[id] = (state.cart[id] || 0) + 1;
+    renderMenu(); renderEmptyCategory(); renderCart();
+    showUndo(id);
+    return;
+  }
+
+  const undo = e.target.closest("[data-undo]");
+  if (undo) {
+    const id = undo.dataset.undo;
+    if (state.cart[id] > 1) state.cart[id] -= 1; else delete state.cart[id];
+    hideUndo();
     renderMenu(); renderEmptyCategory(); renderCart();
     return;
   }

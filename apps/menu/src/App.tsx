@@ -53,6 +53,8 @@ export function App() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<Key | null>(null);
   const [stage, setStage] = useState<1 | 2 | 3>(1);
+  /** The dish just added, and the line to drop if the customer says undo. */
+  const [undo, setUndo] = useState<{ lineId: string; name: string } | null>(null);
   const [billRequested, setBillRequested] = useState(false);
   const [waiterCalled, setWaiterCalled] = useState(false);
   const menuVersionRef = useRef<number | null>(null);
@@ -152,15 +154,37 @@ export function App() {
     [path],
   );
 
-  const addLine = useCallback(
-    (item: MenuItem, qty: number, optionIds: string[], notes?: string) => {
+  const dropLine = useCallback(
+    (lineId: string) =>
       updateCart({
         ...cart,
-        lines: [...cart.lines, newLine(item, qty, optionIds, notes)],
-      });
-      setActiveItem(null);
-    },
+        lines: cart.lines.filter((l) => l.lineId !== lineId),
+      }),
     [cart, updateCart],
+  );
+
+  const setLineQty = useCallback(
+    (lineId: string, qty: number) => {
+      if (qty < 1) return dropLine(lineId);
+      updateCart({
+        ...cart,
+        lines: cart.lines.map((l) => (l.lineId === lineId ? { ...l, qty } : l)),
+      });
+    },
+    [cart, dropLine, updateCart],
+  );
+
+  const addLine = useCallback(
+    (item: MenuItem, qty: number, optionIds: string[], notes?: string) => {
+      const line = newLine(item, qty, optionIds, notes);
+      updateCart({ ...cart, lines: [...cart.lines, line] });
+      setActiveItem(null);
+      // Undo where the mistake happens. Tapping the wrong dish is the most
+      // common thing a customer will do on this screen, and without this the
+      // fix is three taps away in a cart they have to think to open.
+      setUndo({ lineId: line.lineId, name: lang === "ms" ? item.nameMs : item.nameEn });
+    },
+    [cart, lang, updateCart],
   );
 
   const submit = useCallback(async () => {
@@ -290,9 +314,8 @@ export function App() {
           t={t}
           cart={cart}
           sending={sending}
-          onRemove={(lineId) =>
-            updateCart({ ...cart, lines: cart.lines.filter((l) => l.lineId !== lineId) })
-          }
+          onRemove={dropLine}
+          onQty={setLineQty}
           onBack={() => setView("menu")}
           onSubmit={submit}
         />
@@ -333,6 +356,52 @@ export function App() {
           onAdd={addLine}
         />
       )}
+
+      {undo && (
+        <UndoBar
+          label={`${t("added")}: ${undo.name}`}
+          action={t("undo")}
+          onAction={() => {
+            dropLine(undo.lineId);
+            setUndo(null);
+          }}
+          onDone={() => setUndo(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * "That's not what I wanted" — one tap, where it happened.
+ *
+ * Shown above the cart bar rather than over it, so undoing and going to the
+ * cart are never the same tap in the same place. It clears itself after a few
+ * seconds: a customer who has moved on should not be looking at a stale offer
+ * to undo something they meant.
+ */
+function UndoBar({
+  label,
+  action,
+  onAction,
+  onDone,
+}: {
+  label: string;
+  action: string;
+  onAction: () => void;
+  onDone: () => void;
+}) {
+  useEffect(() => {
+    const timer = window.setTimeout(onDone, 6000);
+    return () => window.clearTimeout(timer);
+  }, [label, onDone]);
+
+  return (
+    <div className="undo-bar" role="status">
+      <span className="undo-label">{label}</span>
+      <button className="undo-action" onClick={onAction}>
+        {action}
+      </button>
     </div>
   );
 }

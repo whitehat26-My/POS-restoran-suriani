@@ -109,6 +109,41 @@ chipNote.includes('Kurang manis') || fail(`chip did not fill the note: ${chipNot
 await p.click('.sheet-add');
 ok('a dish with no options still takes a request');
 
+// 6b. The undo. Tapping the wrong dish is the commonest mistake on this
+// screen, and the fix has to be one tap where it happened — not three taps
+// inside a cart the customer has to think to open.
+await p.click('.cat-rail button:has-text("Western Food")');
+await p.click('.dish:has-text("Lamb Chop")');
+await p.click('.sheet-add');
+await p.waitForSelector('.undo-bar', { timeout: 3000 });
+(await p.textContent('.undo-bar')).includes('Lamb Chop') || fail('undo bar does not name the dish');
+const beforeUndo = await p.textContent('.cart-count');
+await p.click('.undo-action');
+await p.waitForSelector('.undo-bar', { state: 'detached', timeout: 3000 });
+const afterUndo = await p.textContent('.cart-count');
+Number(afterUndo) === Number(beforeUndo) - 1 ||
+  fail(`undo did not remove the line: ${beforeUndo} → ${afterUndo}`);
+ok('one tap undoes the dish just added');
+
+// 6c. A wrong quantity is fixed without losing the options and the note.
+await p.click('.cart-bar .btn');
+await p.waitForSelector('.line-stepper');
+const before = await p.textContent('.total-row .num');
+await p.click('.line-item:has-text("Kungfu") .line-stepper button:has-text("+")');
+await p.waitForFunction(
+  (was) => document.querySelector('.total-row .num').textContent !== was,
+  before,
+);
+(await p.textContent('.line-item:has-text("Kungfu")')).includes('Kuetiau') ||
+  fail('changing the quantity lost the options');
+await p.click('.line-item:has-text("Kungfu") .line-stepper button:has-text("−")');
+await p.waitForFunction(
+  (want) => document.querySelector('.total-row .num').textContent === want,
+  before,
+);
+ok('quantity adjusts in the cart, keeping the options');
+await p.click('.btn-ghost');
+
 // 7. Cart survives a reload
 await p.reload();
 await p.waitForSelector('.cart-bar.is-up');

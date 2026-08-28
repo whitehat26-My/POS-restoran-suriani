@@ -84,6 +84,30 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .tag-out   { background: var(--surface-sunk); color: var(--muted); }
 
 .helper { padding: 0 var(--s4) var(--s6); color: var(--muted); font-size: var(--t-sm); }
+/* The undo. Sits above the cart bar, never over it: undoing a mistake and
+   going to the cart must not be the same tap in the same place. */
+.undo-bar {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 92px);
+  z-index: 60; display: flex; align-items: center; gap: var(--s3);
+  max-width: min(92vw, 460px);
+  padding: 10px 12px 10px var(--s4);
+  border-radius: var(--r-full);
+  background: var(--ink); color: var(--paper);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 22%);
+  animation: undo-in var(--mid) var(--spring);
+}
+@keyframes undo-in { from { transform: translate(-50%, 12px); opacity: 0; } }
+.undo-label {
+  font-size: var(--t-sm); font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.undo-action {
+  flex: none; padding: 7px 15px; border-radius: var(--r-full);
+  background: var(--paper); color: var(--ink);
+  font-size: var(--t-sm); font-weight: 800;
+}
+
 .press-hint { padding: 0 var(--s4) var(--s2); color: var(--muted-soft); font-size: var(--t-xs); }
 /* A category the owner has not filled yet says so, rather than looking broken. */
 .empty-cat { padding: var(--s6) var(--s4); color: var(--muted); font-size: var(--t-sm); text-align: center; }
@@ -200,6 +224,18 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .line-name { font-weight: 700; font-size: var(--t-sm); }
 .line-opts { color: var(--muted); font-size: var(--t-xs); }
 .line-sen { font-weight: 700; font-size: var(--t-sm); }
+.line-actions { display: flex; align-items: center; gap: var(--s3); margin-top: 6px; }
+.line-stepper {
+  display: inline-flex; align-items: center; gap: 2px;
+  background: var(--surface-sunk); border: 1px solid var(--line);
+  border-radius: var(--r-full); padding: 2px;
+}
+.line-stepper button {
+  width: 30px; height: 30px; border-radius: var(--r-full);
+  font-weight: 800; font-size: var(--t-sm);
+  background: var(--surface); border: 1px solid var(--line); color: var(--ink);
+}
+.line-stepper span { min-width: 22px; text-align: center; font-weight: 700; font-size: var(--t-sm); }
 .line-remove { color: var(--tag-hot-fg); font-size: var(--t-xs); font-weight: 700; padding: 4px 0; }
 .total-row { display: flex; justify-content: space-between; padding: var(--s4) 0; font-weight: 800; font-size: var(--t-md); }
 
