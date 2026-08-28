@@ -25,7 +25,7 @@ import {
   type SyncState,
 } from "@suriani/offline";
 
-import { apiUrl } from "./base";
+import { authedFetch } from "./base";
 
 /** A tablet keeps its identity across restarts; two tills must not collide. */
 function deviceId(): string {
@@ -80,7 +80,7 @@ export function openOfflineTill(
   const outbox = new Outbox(kv, deviceId(), ulid);
 
   const push = async (ops: Op[]) => {
-    const res = await fetch(apiUrl(`/api/outlets/${outletId}/sync`), {
+    const res = await authedFetch(`/api/outlets/${outletId}/sync`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ops }),

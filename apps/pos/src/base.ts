@@ -57,3 +57,59 @@ export function wsUrl(path: string): string {
 export function needsSetup(): boolean {
   return isNativeShell() && apiBase() === "";
 }
+
+/* ------------------------------------------------------------------ *
+ * The session token
+ *
+ * In a browser the session is an HttpOnly cookie the server sets, which
+ * scripts cannot read — the right shape there. The tablet is cross-origin, so
+ * no cookie is sent and it has to carry a bearer token itself.
+ *
+ * That is deliberately the *only* thing crossing origins: because no cookie is
+ * ever attached, the API turns Allow-Credentials off and has no CSRF surface
+ * on that path at all.
+ * ------------------------------------------------------------------ */
+
+const TOKEN_KEY = "suriani_token";
+
+export function authToken(): string {
+  try {
+    return localStorage.getItem(TOKEN_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setAuthToken(token: string): void {
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    // A browser with storage blocked still works: it falls back to the cookie.
+  }
+}
+
+export function clearAuthToken(): void {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* nothing to clear */
+  }
+}
+
+/**
+ * Every staff request, with the base URL and the token attached.
+ *
+ * `credentials: "same-origin"` is the default and is what we want: in a
+ * browser the cookie rides along, and on the tablet nothing does except the
+ * header we set here.
+ */
+export function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const token = authToken();
+  return fetch(apiUrl(path), {
+    ...init,
+    headers: {
+      ...(init.headers as Record<string, string> | undefined),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+}

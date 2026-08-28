@@ -10,15 +10,17 @@
  * cannot open a socket to a printer, so a web-only POS is one dead router away
  * from a kitchen that cannot see its orders.
  *
- * NOT YET WIRED TO A SCREEN. The transports and the claim/ack loop are here
- * and under test in `packages/printer`, but nothing calls `printPendingJobs`
- * yet: the tablet still needs a setup screen for its server URL, its agent
- * token and its printer addresses, and the server needs to accept a bearer
- * token from a different origin. Both are the next commit, and shipping a
- * half-wired screen would be worse than shipping none.
+ * Wired to the Peranti screen: it registers the agent, stores the printer
+ * addresses, and the till drains the queue on a timer while it is open.
  */
 import { Capacitor, registerPlugin } from "@capacitor/core";
-import { runOnce, type RunReport, type Transport } from "@suriani/printer";
+import { renderTestSlip } from "@suriani/escpos/templates";
+import {
+  printVia,
+  runOnce,
+  type RunReport,
+  type Transport,
+} from "@suriani/printer";
 
 import { apiUrl } from "./base";
 
@@ -46,7 +48,44 @@ export interface PrinterConfig {
 /** target ("kitchen" | "drinks" | "counter") → printer. */
 export type PrinterMap = Record<string, PrinterConfig>;
 
+/** Reported on the heartbeat, so a stale tablet is visible as a version. */
+const APP_VERSION = "0.5.0";
+
 const CONFIG_KEY = "suriani_printers";
+const AGENT_KEY = "suriani_agent";
+
+/**
+ * The agent credential.
+ *
+ * Issued once by the server and stored on the tablet, because there is no
+ * endpoint that can read it back — only its PBKDF2 hash is kept. Scoped to one
+ * outlet, so the branch it belongs to is stored beside it: a tablet whose
+ * agent is registered to Jalan Imbi will print Jalan Imbi's dockets no matter
+ * which branch the cashier is looking at, and the setup screen says so rather
+ * than letting that be a surprise at the printer.
+ */
+export interface AgentCredential {
+  token: string;
+  outletId: string;
+  outletName: string;
+}
+
+export function loadAgent(): AgentCredential | null {
+  try {
+    const raw = localStorage.getItem(AGENT_KEY);
+    return raw ? (JSON.parse(raw) as AgentCredential) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveAgent(agent: AgentCredential): void {
+  localStorage.setItem(AGENT_KEY, JSON.stringify(agent));
+}
+
+export function forgetAgent(): void {
+  localStorage.removeItem(AGENT_KEY);
+}
 
 export function loadPrinters(): PrinterMap {
   try {
@@ -140,4 +179,58 @@ export async function printPendingJobs(
     transportsFor: (target) => transportsFor(printers, target),
     decode: fromBase64,
   });
+}
+
+/**
+ * Send a slip to one station's printer, now, and say what happened.
+ *
+ * The install question this answers is not "does the server work" — it is
+ * "can this tablet reach that printer", which nothing else on the setup
+ * screen can prove. So it deliberately skips the queue: no agent token, no
+ * server round trip, straight down the same transports a real docket takes.
+ *
+ * The error is returned rather than swallowed, because "lan: connect timed
+ * out after 1500ms" tells an installer to check the printer's IP, while a
+ * bare "gagal" tells them to phone someone.
+ */
+export async function testPrint(
+  target: string,
+  stationName: string,
+  outletName: string,
+  printers: PrinterMap = loadPrinters(),
+): Promise<{ transport: string }> {
+  const transports = transportsFor(printers, target);
+  if (transports.length === 0) {
+    throw new Error("Tiada alamat pencetak disimpan untuk stesen ini.");
+  }
+  const bytes = renderTestSlip({ outletName, stationName, at: new Date() });
+  const { transport } = await printVia(transports, bytes);
+  return { transport };
+}
+
+/**
+ * Tell the server this tablet is alive and what it is pointed at.
+ *
+ * Cheap, and it is the only way an owner looking at the control plane can
+ * tell "the kitchen printer is unplugged" from "the tablet has been off since
+ * Tuesday". Failure is ignored on purpose: a heartbeat that cannot be
+ * delivered is precisely the situation it reports, and throwing here would
+ * take the print loop down with it.
+ */
+export async function sendHeartbeat(
+  agentToken: string,
+  printers: PrinterMap = loadPrinters(),
+): Promise<void> {
+  try {
+    await fetch(apiUrl("/api/agent/heartbeat"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${agentToken}`,
+      },
+      body: JSON.stringify({ appVersion: APP_VERSION, printers }),
+    });
+  } catch {
+    /* offline; the next round tries again */
+  }
 }

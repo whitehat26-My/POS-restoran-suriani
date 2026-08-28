@@ -6,7 +6,7 @@
  * it replaces. The `state` callback drives the connection-health pill: the
  * cashier must always know whether the screen is truth.
  */
-import { wsUrl } from "./base";
+import { authToken, wsUrl } from "./base";
 
 export type LiveState = "connecting" | "live" | "reconnecting";
 
@@ -28,7 +28,14 @@ export function openLive(
     if (closed) return;
     onState(attempt === 0 ? "connecting" : "reconnecting");
 
-    socket = new WebSocket(wsUrl(`/api/outlets/${outletId}/ws`));
+    // A WebSocket handshake cannot carry an Authorization header, and from
+    // the tablet it is cross-origin so it carries no cookie either. The
+    // server accepts the token in the query string for upgrades only.
+    const token = authToken();
+    socket = new WebSocket(
+      wsUrl(`/api/outlets/${outletId}/ws`) +
+        (token ? `?access_token=${encodeURIComponent(token)}` : ""),
+    );
 
     socket.onopen = () => {
       attempt = 0;

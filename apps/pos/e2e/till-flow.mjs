@@ -152,6 +152,11 @@ detailText.includes('Jualan') || fail('day detail missing the sales headline');
 detailText.includes('Teh Tarik') || fail('day detail missing the dish sold');
 ok("today's sale shows in the owner's daily record");
 
+// Back to the counter. Rekod replaces the floor rather than sitting beside
+// it, so everything below needs the till view back.
+await pos.click('.pill:has-text("Kaunter")');
+await pos.waitForSelector('[data-testid="menu-search"]');
+
 // --- THE OUTAGE DRILL ---------------------------------------------------
 // A staff token for asserting server state directly, independent of the UI.
 const { token } = await (

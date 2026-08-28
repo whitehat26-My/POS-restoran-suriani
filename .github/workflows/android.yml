@@ -16,6 +16,7 @@ on:
       - 'packages/printer/**'
       - 'packages/offline/**'
       - 'packages/core/**'
+      - 'packages/escpos/**'
       - '.github/workflows/android.yml'
   # For an APK of a commit the paths filter skipped.
   workflow_dispatch:

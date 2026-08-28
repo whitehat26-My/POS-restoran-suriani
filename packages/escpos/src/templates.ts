@@ -196,3 +196,45 @@ export function renderReceipt(receipt: Receipt): Uint8Array {
 
   return p.bytes();
 }
+
+/**
+ * The setup slip.
+ *
+ * The one docket rendered on the tablet rather than the server, because it
+ * exists to answer a question the server cannot: can *this* device reach
+ * *that* printer? During install nothing has been ordered yet, so there is no
+ * real docket to send, and the point is to see paper come out before the
+ * restaurant opens rather than during service.
+ *
+ * It says which station it came out of, because the commonest install mistake
+ * is two printers swapped — the kitchen slip going to the counter is only
+ * obvious if the slip names itself.
+ */
+export interface TestSlip {
+  outletName: string;
+  /** "kitchen" | "drinks" | "counter" — as the till labels the station. */
+  stationName: string;
+  at: Date;
+}
+
+export function renderTestSlip(slip: TestSlip): Uint8Array {
+  const p = new EscPos();
+  p.init().align("center");
+
+  p.size(2, 2).bold(true).line("UJIAN").bold(false).size(1, 1);
+  p.line(slip.outletName);
+  p.feed(1);
+
+  p.size(1, 2).line(slip.stationName.toUpperCase()).size(1, 1);
+  p.feed(1);
+
+  p.line(
+    `${slip.at.getFullYear()}-${String(slip.at.getMonth() + 1).padStart(2, "0")}-` +
+      `${String(slip.at.getDate()).padStart(2, "0")} ${timeOf(slip.at)}`,
+  );
+  p.feed(1);
+  p.line("Pencetak ini sudah sedia.");
+  p.cut();
+
+  return p.bytes();
+}

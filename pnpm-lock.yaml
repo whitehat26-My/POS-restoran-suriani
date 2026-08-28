@@ -93,6 +93,9 @@ importers:
       '@suriani/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@suriani/escpos':
+        specifier: workspace:*
+        version: link:../../packages/escpos
       '@suriani/offline':
         specifier: workspace:*
         version: link:../../packages/offline

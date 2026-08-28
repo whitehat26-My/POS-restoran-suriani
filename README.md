@@ -24,7 +24,7 @@ and every order lands exactly once. Proven in the browser, not promised.
 | 4b | Per-dish requests, printable bill, daily record history | ✅ |
 | 4c | The real printed menu — 13 sections, 147 dishes, the RM 0.50 rule | ✅ |
 | 5 | Offline engine — op log, outbox, replay-safe sync | ✅ |
-| 5b | Android shell — Capacitor project, native TCP + Bluetooth printing, APK in CI | 🚧 |
+| 5b | Android shell — Capacitor project, native TCP + Bluetooth printing, tablet setup, APK in CI | 🚧 |
 
 Full plan and roadmap: [`docs/PLAN.md`](docs/PLAN.md).
 
@@ -240,11 +240,32 @@ code, since the rest of the project is TypeScript.
   and has no interest in where anyone is. Without that flag Android demands the location permission
   too, which a restaurant owner would rightly refuse.
 
-**Not finished.** The APK builds and the native printing is in place, but the tablet cannot sign in
-yet: it needs a setup screen for its server URL, agent token and printer addresses, and the server
-needs to accept a bearer token from the app's origin. Until then the till runs in a browser, where
-it already trades offline. The three outage drills in [`docs/PLAN.md`](docs/PLAN.md) need real
-hardware and are the gate before any branch goes live.
+### Install day — the **Peranti** tab
+
+Everything the tablet needs is per-device, so none of it is in the build: the same APK runs at Jalan
+Imbi, at Hotel Leo and at every restaurant onboarded later. An APK per customer is a release process
+nobody keeps up with.
+
+1. **Where is the server.** Asked once, on first start, and the address is proved by a call to
+   `/health` before it is stored — a typo saved now is a tablet that fails to log in for a reason
+   nobody can see.
+2. **Register this tablet** as a print agent. The credential is scoped to one branch, so a stolen
+   tablet reaches one restaurant's print queue and cannot read a sale or open a bill. It is shown
+   once, because only its hash is kept; the screen names the branch it belongs to, so a tablet
+   pointed at the wrong outlet says so rather than surprising someone at the printer.
+3. **Each station's printer** — a LAN `host:port`, and a paired Bluetooth device chosen from the
+   list. Fill in both: that pair is what keeps the kitchen printing when the router dies.
+4. **Uji cetak.** Paper comes out, naming the station it came from. Swapped printers are the
+   commonest install mistake and the only way to catch them is to look at the slip.
+
+While the till is open the tablet drains its own print queue every three seconds and heartbeats
+about once a minute, so the control plane can tell an unplugged printer from a tablet that has been
+off since Tuesday.
+
+**Still to prove on hardware.** The three outage drills in [`docs/PLAN.md`](docs/PLAN.md) — internet,
+router, power — need real printers and are the gate before any branch goes live. Until then the till
+also runs in a browser, where it already trades offline; a browser cannot open a socket to a printer,
+and the Peranti screen says so rather than offering a button that fails silently.
 
 ## The daily record
 

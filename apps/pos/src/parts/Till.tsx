@@ -16,7 +16,9 @@ import {
 } from "../api";
 import { openLive, type LiveState } from "../live";
 import { openOfflineTill, type OfflineTill } from "../offline";
+import { isTablet, loadAgent, printPendingJobs, sendHeartbeat } from "../print";
 import { BillSheet } from "./BillSheet";
+import { Devices } from "./Devices";
 import { ItemConfig, type ConfiguredLine } from "./ItemConfig";
 import { Records } from "./Records";
 
@@ -28,7 +30,7 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
   // shown-and-403'd, because a button that always fails is worse than no
   // button — but the server gate is what actually enforces it.
   const manages = role === "owner" || role === "manager";
-  const [view, setView] = useState<"floor" | "records">("floor");
+  const [view, setView] = useState<"floor" | "records" | "devices">("floor");
 
   const [live, setLive] = useState<LiveState>("connecting");
   const [zones, setZones] = useState<Zone[]>([]);
@@ -83,6 +85,51 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
       offline.current = null;
     };
   }, [outletId, say]);
+
+  // The tablet is its own print agent.
+  //
+  // In a browser this never runs: a WebView cannot open a socket to a printer,
+  // which is the entire reason the till is a native app. On the tablet it
+  // claims its own jobs and prints them over the LAN, falling back to
+  // Bluetooth when the router dies — the one failure mode a cloud POS cannot
+  // survive.
+  //
+  // Three seconds, and no back-off on failure: a job that cannot print is
+  // already walking the server's own retry schedule, and the kitchen waiting
+  // an extra round because the till decided to be polite is the wrong trade.
+  useEffect(() => {
+    const agent = loadAgent();
+    if (!isTablet() || !agent) return;
+
+    let stopped = false;
+    let sinceHeartbeat = 0;
+    const round = async () => {
+      try {
+        await printPendingJobs(agent.token);
+      } catch {
+        // Unreachable server. The queue is on the server, so nothing is lost
+        // and the next round picks it up; the print-health pill is what tells
+        // the cashier the kitchen has gone quiet.
+      }
+      // Roughly once a minute, so the control plane can tell an unplugged
+      // printer from a tablet that has been off since Tuesday.
+      if (++sinceHeartbeat >= 20) {
+        sinceHeartbeat = 0;
+        await sendHeartbeat(agent.token);
+      }
+    };
+
+    void round();
+    const timer = window.setInterval(() => {
+      if (!stopped) void round();
+    }, 3_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+    // The agent credential is per device, not per outlet: re-reading it on an
+    // outlet switch would restart the loop for no reason.
+  }, []);
 
   // Feed + menu load on outlet switch; floor arrives with the WS snapshot.
   useEffect(() => {
@@ -344,6 +391,14 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
               >
                 Rekod
               </button>
+              <button
+                className="pill"
+                aria-pressed={view === "devices"}
+                data-testid="tab-devices"
+                onClick={() => setView("devices")}
+              >
+                Peranti
+              </button>
             </>
           )}
           {outlets.length > 1 &&
@@ -430,6 +485,8 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
 
       {view === "records" ? (
         <Records outletId={outletId} outletName={outlet.name} onSay={say} />
+      ) : view === "devices" ? (
+        <Devices outletId={outletId} outletName={outlet.name} onSay={say} />
       ) : (
       <div className="body">
         <section className="col">

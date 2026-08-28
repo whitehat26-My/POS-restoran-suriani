@@ -1,23 +1,37 @@
 import { useEffect, useState } from "react";
 
 import { api, type Outlet, type Role } from "./api";
+import { needsSetup } from "./base";
+import { ServerSetup } from "./parts/ServerSetup";
 import { Till } from "./parts/Till";
 
 /**
- * PIN login, then the till. The session lives in an HttpOnly cookie; if a
- * stored session is still valid the outlets call simply succeeds and login is
- * skipped.
+ * Setup if the device has never been pointed at a restaurant, then PIN login,
+ * then the till. In a browser the first step never appears: the till is served
+ * by the same Worker as the API, so every path is already relative.
+ *
+ * The session lives in an HttpOnly cookie in a browser and in a bearer token
+ * on the tablet; either way, if a stored session is still valid the outlets
+ * call simply succeeds and login is skipped.
  */
 export function App() {
   const [outlets, setOutlets] = useState<Outlet[] | null>(null);
   const [role, setRole] = useState<Role>("cashier");
   const [checked, setChecked] = useState(false);
+  // Asking every start would be a nuisance; asking once is the whole point.
+  const [setup, setSetup] = useState(() => needsSetup());
   const [phone, setPhone] = useState("");
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Pointless before the tablet knows where to look, and it would burn a
+    // failed request on every start.
+    if (setup) {
+      setChecked(true);
+      return;
+    }
     api
       .outlets()
       .then((r) => {
@@ -26,7 +40,7 @@ export function App() {
       })
       .catch(() => {})
       .finally(() => setChecked(true));
-  }, []);
+  }, [setup]);
 
   const login = async () => {
     setBusy(true);
@@ -42,6 +56,8 @@ export function App() {
       setBusy(false);
     }
   };
+
+  if (setup) return <ServerSetup onDone={() => setSetup(false)} />;
 
   if (!checked) return <div className="login" />;
 

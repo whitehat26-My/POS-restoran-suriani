@@ -47,6 +47,78 @@ type Vars = { session: SessionPayload; device: control.Device };
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
+
+/* ------------------------------------------------------------------ *
+ * Cross-origin access, for the tablet only
+ *
+ * The Android shell serves the till from inside the APK, so its origin is the
+ * device itself and every API call is cross-origin. Three deliberate choices:
+ *
+ *  - **An allowlist, never a wildcard.** These are the only origins a
+ *    Capacitor shell can have. A `*` would let any web page a cashier happens
+ *    to open talk to this API with whatever token it could get hold of.
+ *
+ *  - **No `Allow-Credentials`, ever.** The tablet authenticates with a bearer
+ *    token it holds itself, so no cookie is sent cross-origin — which means
+ *    there is no CSRF surface here at all. Turning credentials on to "make
+ *    cookies work" would create one.
+ *
+ *  - **Registered before the auth middleware**, because a preflight carries no
+ *    Authorization header and would otherwise be answered 401 — and a browser
+ *    reads a failed preflight as "this API refuses you", with no way to tell
+ *    that the real request would have worked.
+ * ------------------------------------------------------------------ */
+
+const SHELL_ORIGINS = new Set([
+  "https://localhost",     // Capacitor Android, androidScheme: "https"
+  "http://localhost",      // Capacitor Android, http scheme
+  "capacitor://localhost", // Capacitor iOS, if it is ever built
+]);
+
+function corsHeaders(origin: string): Record<string, string> {
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    "Access-Control-Max-Age": "86400",
+    // Origin is part of the cache key, so a proxy cannot hand one origin's
+    // response to another.
+    Vary: "Origin",
+  };
+}
+
+const cors = createMiddleware<{ Bindings: Env; Variables: Vars }>(async (c, next) => {
+  const origin = c.req.header("Origin");
+  const allowed = origin !== undefined && SHELL_ORIGINS.has(origin);
+
+  if (c.req.method === "OPTIONS") {
+    return allowed
+      ? new Response(null, { status: 204, headers: corsHeaders(origin) })
+      : c.json({ error: "origin not allowed" }, 403);
+  }
+
+  await next();
+  if (allowed) {
+    for (const [key, value] of Object.entries(corsHeaders(origin))) {
+      c.header(key, value);
+    }
+  }
+});
+
+app.use("/api/*", cors);
+
+/*
+ * /health needs it too, and needs it registered *before* the route.
+ *
+ * Hono composes handlers in registration order, so a route declared above its
+ * middleware never runs that middleware. This is the first request a tablet
+ * ever makes — the setup screen proves the address before storing it — so
+ * without the headers here the shell can never get past its own first screen,
+ * while the same URL works perfectly in a browser. A cross-origin bug that
+ * only appears on the device is exactly the kind that gets found in a
+ * restaurant rather than in CI.
+ */
+app.use("/health", cors);
 app.get("/health", (c) => c.json({ ok: true }));
 
 /* ------------------------------------------------------------------ *
@@ -258,7 +330,15 @@ app.post("/api/auth/login", async (c) => {
 
 app.use("/api/outlets/*", async (c, next) => {
   const bearer = c.req.header("Authorization")?.replace(/^Bearer\s+/i, "");
-  const token = bearer ?? readSessionCookie(c.req.raw);
+
+  // A WebSocket handshake cannot carry an Authorization header, and from the
+  // tablet it is cross-origin so it carries no cookie either. The token comes
+  // in the query string for that one case — and *only* that case, because
+  // URLs end up in access logs and proxy caches in a way headers do not.
+  const upgrading = c.req.header("Upgrade")?.toLowerCase() === "websocket";
+  const fromQuery = upgrading ? c.req.query("access_token") : undefined;
+
+  const token = bearer ?? fromQuery ?? readSessionCookie(c.req.raw);
   const session = token
     ? await verifySession(token, c.env.SESSION_SECRET)
     : null;

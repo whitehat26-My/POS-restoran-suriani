@@ -8,7 +8,11 @@
 import { describe, expect, it } from "vitest";
 
 import { EscPos, wrap } from "../src/index";
-import { renderKitchenTicket, renderReceipt } from "../src/templates";
+import {
+  renderKitchenTicket,
+  renderReceipt,
+  renderTestSlip,
+} from "../src/templates";
 
 const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 
@@ -201,5 +205,27 @@ describe("text encoding", () => {
       lines: [{ qty: 1, name: "Nasi 🍚 Lemak", modifiers: [], notes: null }],
     });
     expect(bytes.every((b) => b <= 0x7f)).toBe(true);
+  });
+});
+
+describe("setup slip", () => {
+  const slip = renderTestSlip({
+    outletName: "Suriani Hotel Leo",
+    stationName: "Dapur",
+    at: new Date(2026, 7, 28, 9, 5),
+  });
+
+  it("names the station, because swapped printers are the commonest mistake", () => {
+    // Uppercased on the slip so it reads across a kitchen at arm's length.
+    expect(decode(slip)).toContain("DAPUR");
+    expect(decode(slip)).toContain("Suriani Hotel Leo");
+  });
+
+  it("cuts, so the installer can tear off a slip and move on", () => {
+    expect(includesSequence(slip, [0x1d, 0x56, 1])).toBe(true);
+  });
+
+  it("never kicks the drawer — a test print is not a sale", () => {
+    expect(includesSequence(slip, [0x1b, 0x70])).toBe(false);
   });
 });

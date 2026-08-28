@@ -4,7 +4,7 @@
  */
 import type { Sen } from "@suriani/core/money";
 
-import { apiUrl } from "./base";
+import { authedFetch, setAuthToken } from "./base";
 
 export interface Outlet {
   id: string;
@@ -37,6 +37,16 @@ export interface DaySummary extends DayRow {
     salesSen: Sen;
     qty: number;
   }[];
+}
+
+export interface Station {
+  id: string;
+  name: string;
+  /** "kitchen" | "drinks" | "counter" — what kind of paper comes out. */
+  target: string;
+  enabled: number;
+  isDefault: number;
+  sortOrder: number;
 }
 
 export interface Zone {
@@ -150,53 +160,78 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 export const api = {
-  login: (phone: string, pin: string) =>
-    fetch(apiUrl("/api/auth/login"), {
+  login: async (phone: string, pin: string) => {
+    const result = await authedFetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone, pin }),
-    }).then(json<{ user: { id: string; name: string; role: string } }>),
+    }).then(
+      json<{ token: string; user: { id: string; name: string; role: string } }>,
+    );
+    // The browser also gets an HttpOnly cookie and would work without this.
+    // The tablet is cross-origin, so the token is the only thing it has.
+    setAuthToken(result.token);
+    return result;
+  },
 
   outlets: () =>
-    fetch(apiUrl("/api/outlets")).then(json<{ role: Role; outlets: Outlet[] }>),
+    authedFetch("/api/outlets").then(json<{ role: Role; outlets: Outlet[] }>),
 
   floor: (outletId: string) =>
-    fetch(apiUrl(`/api/outlets/${outletId}/floor`)).then(
+    authedFetch(`/api/outlets/${outletId}/floor`).then(
       json<{ zones: Zone[]; tables: FloorTable[] }>,
     ),
 
   orders: (outletId: string) =>
-    fetch(apiUrl(`/api/outlets/${outletId}/orders`)).then(json<{ orders: Ticket[] }>),
+    authedFetch(`/api/outlets/${outletId}/orders`).then(json<{ orders: Ticket[] }>),
 
   menu: (outletId: string) =>
-    fetch(apiUrl(`/api/outlets/${outletId}/menu`)).then(
+    authedFetch(`/api/outlets/${outletId}/menu`).then(
       json<{ categories: MenuCategory[]; items: MenuItem[] }>,
     ),
 
   bill: (outletId: string, tableId: string) =>
-    fetch(apiUrl(`/api/outlets/${outletId}/tables/${tableId}/bill`)).then(
+    authedFetch(`/api/outlets/${outletId}/tables/${tableId}/bill`).then(
       json<BillSheet>,
     ),
 
   dailySales: (outletId: string, days = 30) =>
-    fetch(apiUrl(`/api/outlets/${outletId}/reports/daily?days=${days}`)).then(
+    authedFetch(`/api/outlets/${outletId}/reports/daily?days=${days}`).then(
       json<{ days: DayRow[] }>,
     ),
 
   daySummary: (outletId: string, date: string) =>
-    fetch(apiUrl(`/api/outlets/${outletId}/reports/daily/${date}`)).then(
+    authedFetch(`/api/outlets/${outletId}/reports/daily/${date}`).then(
       json<DaySummary>,
     ),
 
   printReceipt: (outletId: string, sessionId: string) =>
-    fetch(apiUrl(`/api/outlets/${outletId}/sessions/${sessionId}/receipt`), {
+    authedFetch(`/api/outlets/${outletId}/sessions/${sessionId}/receipt`, {
       method: "POST",
     }).then(json<{ ok: boolean; jobId: string; totalSen: Sen; itemCount: number }>),
 
   closeSession: (outletId: string, sessionId: string) =>
-    fetch(apiUrl(`/api/outlets/${outletId}/sessions/${sessionId}/close`), {
+    authedFetch(`/api/outlets/${outletId}/sessions/${sessionId}/close`, {
       method: "POST",
     }).then(json<{ ok: boolean }>),
+
+  stations: (outletId: string) =>
+    authedFetch(`/api/outlets/${outletId}/print/stations`).then(
+      json<{ stations: Station[] }>,
+    ),
+
+  /**
+   * Mint an agent credential for this tablet.
+   *
+   * The token comes back once and is never readable again — only its hash is
+   * stored — so the caller has to keep it or register another.
+   */
+  registerAgent: (outletId: string, name: string) =>
+    authedFetch(`/api/outlets/${outletId}/agents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }).then(json<{ deviceId: string; token: string }>),
 
 };
 
@@ -225,10 +260,10 @@ export interface PrintHealth {
 
 export const printApi = {
   health: (outletId: string) =>
-    fetch(apiUrl(`/api/outlets/${outletId}/print/health`)).then(json<PrintHealth>),
+    authedFetch(`/api/outlets/${outletId}/print/health`).then(json<PrintHealth>),
 
   reprint: (outletId: string, jobId: string) =>
-    fetch(apiUrl(`/api/outlets/${outletId}/print/jobs/${jobId}/reprint`), {
+    authedFetch(`/api/outlets/${outletId}/print/jobs/${jobId}/reprint`, {
       method: "POST",
     }).then(json<{ ok: boolean }>),
 };
