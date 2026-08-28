@@ -227,6 +227,12 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 
 .scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
 
+/* [hidden] is only `display: none` at the UA level, so any rule that sets a
+   display wins over it. Every element here that toggles with `hidden` sets
+   one, so say it explicitly rather than leaving an invisible panel eating
+   taps. */
+[hidden] { display: none !important; }
+
 /* ============================================================
    SURFACE A — CUSTOMER MENU
    ============================================================ */
@@ -528,6 +534,82 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 }
 .frozen-note code { font-family: var(--mono, monospace); font-size: 12px; }
 
+/* ---- the dish sheet and the cart review ----
+   Mirrors apps/menu/src/screens/ItemSheet.tsx and CartScreen.tsx. The
+   prototype had no modal styling at all; these are built from the same tokens
+   as everything else. */
+.sheet-veil {
+  position: absolute; inset: 0; z-index: 70;
+  background: rgb(16 30 25 / 46%);
+  display: flex; align-items: flex-end;
+  animation: veil-in .18s ease;
+}
+@keyframes veil-in { from { opacity: 0; } }
+.dish-sheet {
+  width: 100%; max-height: 86%; overflow-y: auto;
+  background: var(--surface); color: var(--ink);
+  border-radius: 22px 22px 0 0; padding: 14px 16px 18px;
+  animation: sheet-in .26s cubic-bezier(.2,.9,.3,1.15);
+}
+@keyframes sheet-in { from { transform: translateY(30px); } }
+.sheet-grab { width: 38px; height: 4px; border-radius: 999px; background: var(--line); margin: 0 auto 12px; }
+.sheet-head { display: flex; gap: 12px; align-items: center; margin-bottom: 4px; }
+.sheet-art { width: 60px; height: 60px; flex: none; border-radius: 14px; overflow: hidden; background: var(--surface-sunk); }
+.sheet-art svg { width: 100%; height: 100%; display: block; }
+.sheet-name { font-weight: 800; font-size: 16px; letter-spacing: -.01em; }
+.sheet-price { font-family: var(--mono); font-weight: 700; font-size: 13px; color: var(--muted); }
+
+.opt-group { margin-top: 16px; }
+.opt-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.opt-name { font-weight: 700; font-size: 13px; }
+.opt-rule { font-size: 11px; color: var(--muted); }
+.opt-rule.is-required { color: var(--sambal); font-weight: 700; }
+.opt {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 11px 12px; border-radius: 12px; margin-bottom: 8px;
+  border: 1.5px solid var(--line); background: var(--surface);
+  text-align: left; font-size: 13px;
+}
+.opt[aria-pressed="true"] { border-color: var(--enamel); background: color-mix(in srgb, var(--enamel) 8%, var(--surface)); }
+.opt-mark { width: 18px; height: 18px; border-radius: 50%; flex: none; border: 2px solid var(--line-strong); display: grid; place-items: center; }
+.opt[aria-pressed="true"] .opt-mark { border-color: var(--enamel); }
+.opt[aria-pressed="true"] .opt-mark::after { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--enamel); }
+.opt-label { flex: 1; font-weight: 600; }
+.opt-delta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+.req-block { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.chip {
+  padding: 7px 13px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  border: 1.5px solid var(--line); background: var(--surface); color: var(--muted);
+}
+.chip[aria-pressed="true"] { border-color: var(--enamel); color: var(--enamel); background: color-mix(in srgb, var(--enamel) 10%, var(--surface)); }
+.notes-input {
+  width: 100%; display: block; resize: none; font: inherit; font-size: 13px;
+  padding: 10px 12px; border-radius: 12px; color: var(--ink);
+  border: 1.5px solid var(--line); background: var(--surface);
+}
+.sheet-foot { display: flex; gap: 12px; margin-top: 16px; align-items: center; }
+.stepper { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-sunk); border: 1px solid var(--line); border-radius: 999px; padding: 4px; }
+.stepper button { width: 34px; height: 34px; border-radius: 999px; font-weight: 800; font-size: 15px; background: var(--surface); border: 1px solid var(--line); color: var(--ink); }
+.stepper span { min-width: 22px; text-align: center; font-weight: 700; }
+.sheet-add { flex: 1; }
+.sheet-add[disabled] { opacity: .45; }
+
+.cart-page { padding: 16px 16px 24px; }
+.cart-title { font-size: 19px; font-weight: 800; letter-spacing: -.02em; margin: 10px 0 14px; }
+.line-item { display: flex; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); }
+.line-qty { font-family: var(--mono); font-weight: 700; font-size: 13px; color: var(--muted); }
+.line-body { flex: 1; min-width: 0; }
+.line-name { font-weight: 700; font-size: 14px; }
+.line-opts { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.line-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.line-remove { color: var(--sambal); font-size: 11px; font-weight: 700; padding: 4px 0; }
+.line-sen { font-family: var(--mono); font-weight: 700; font-size: 13px; }
+.total-row { display: flex; justify-content: space-between; align-items: baseline; font-weight: 800; font-size: 16px; padding: 14px 0; border-top: 2px solid var(--ink); margin-top: 6px; }
+.total-row .num { font-family: var(--mono); }
+.cart-empty { padding: 34px 0; text-align: center; color: var(--muted); font-size: 13px; }
+
 /* The undo. Above the cart bar, never over it: undoing a mistake and going to
    the cart must not be the same tap in the same place. */
 .undo-bar {
@@ -607,11 +689,22 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
           </div>
         </div>
 
-        <div class="scroll">
+        <div class="scroll" id="menuView">
           <div id="statusMount"></div>
           <nav class="cat-rail" id="catRail"></nav>
           <div class="menu-list" id="menuList"></div>
           <p class="helper" data-i18n="helper">Tambah pesanan bila-bila masa sepanjang makan. Bil yang sama.</p>
+        </div>
+
+        <!-- The review screen. Checking what you picked, and taking out what
+             you did not want, is the thing a paper menu does for free. -->
+        <div class="scroll" id="cartView" hidden>
+          <div class="cart-page">
+            <button class="btn btn-ghost" id="backToMenu" data-i18n="back_menu">Kembali ke menu</button>
+            <h2 class="cart-title" data-i18n="your_cart">Pesanan anda</h2>
+            <div id="cartLines"></div>
+            <div id="cartFoot"></div>
+          </div>
         </div>
 
         <div class="cart-bar" id="cartBar">
@@ -620,7 +713,11 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
             <small data-i18n="cart_label">Jumlah setakat ini</small>
             <strong id="cartTotal">RM 0.00</strong>
           </div>
-          <button class="btn btn-accent" id="placeBtn" data-i18n="place">Hantar Pesanan</button>
+          <button class="btn btn-accent" id="viewCartBtn" data-i18n="view_cart">Lihat pesanan</button>
+        </div>
+
+        <div class="sheet-veil" id="sheetVeil" hidden>
+          <div class="dish-sheet" id="dishSheet" role="dialog" aria-modal="true"></div>
         </div>
       </div>
     </div>
@@ -714,7 +811,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
             <div class="alert">
               <div class="alert-bar"></div>
               <div>
-                <b data-i18n="a_title">Cendol Pulut habis di Kampung Baru</b>
+                <b data-i18n="a_title">Nasi Lemak Ayam Goreng habis di Kampung Baru</b>
                 <span data-i18n="a_body">Sudah disembunyikan dari semua meja pada 2:14 ptg.</span>
               </div>
             </div>
@@ -765,6 +862,14 @@ const I18N = {
     tagline: "Pesanan QR, kaunter dan dapur — satu sistem",
     s_cust: "Pelanggan", s_pos: "Kaunter", s_own: "Pemilik",
     cart_label: "Jumlah setakat ini", place: "Hantar Pesanan",
+    view_cart: "Lihat pesanan", your_cart: "Pesanan anda",
+    empty_cart: "Belum ada apa-apa. Pilih dari menu dulu.",
+    back_menu: "Kembali ke menu", remove: "Buang", total: "Jumlah",
+    required: "Wajib pilih", choose_upto: "Pilih hingga", add: "Tambah",
+    request_title: "Ada permintaan?",
+    request_hint: "Tulis apa saja — dapur akan baca nota ini.",
+    notes_ph: "Cth. kurang manis, tanpa cili, bungkus…",
+    added: "Ditambah", undo: "Batal",
     helper: "Tambah pesanan bila-bila masa sepanjang makan. Bil yang sama.",
     shift: "Syif petang", online: "Dalam talian",
     p_kitchen: "Pencetak dapur", p_counter: "Kertas kaunter rendah",
@@ -774,7 +879,7 @@ const I18N = {
     greet: "Selamat petang, Puan Suriani", vs: "berbanding Isnin lepas",
     branches: "Dua cawangan", orders: "pesanan",
     byhour: "Jualan mengikut jam", top: "Paling laris hari ini",
-    a_title: "Cendol Pulut habis di Kampung Baru",
+    a_title: "Nasi Lemak Ayam Goreng habis di Kampung Baru",
     a_body: "Sudah disembunyikan dari semua meja pada 2:14 ptg.",
     hint: "Cuba tambah pesanan di skrin Pelanggan, kemudian tukar ke Kaunter — pesanan itu muncul dan tiket dapur tercetak.",
     n1t: "Satu sistem token",
@@ -800,6 +905,14 @@ const I18N = {
     tagline: "QR ordering, counter and kitchen — one system",
     s_cust: "Customer", s_pos: "Counter", s_own: "Owner",
     cart_label: "Running total", place: "Send Order",
+    view_cart: "View order", your_cart: "Your order",
+    empty_cart: "Nothing yet. Pick something from the menu.",
+    back_menu: "Back to menu", remove: "Remove", total: "Total",
+    required: "Required", choose_upto: "Choose up to", add: "Add",
+    request_title: "Any request?",
+    request_hint: "Write anything — the kitchen reads this note.",
+    notes_ph: "e.g. less sweet, no chilli, takeaway…",
+    added: "Added", undo: "Undo",
     helper: "Add to your order any time during the meal. Same bill.",
     shift: "Evening shift", online: "Online",
     p_kitchen: "Kitchen printer", p_counter: "Counter paper low",
@@ -809,7 +922,7 @@ const I18N = {
     greet: "Good evening, Puan Suriani", vs: "vs last Monday",
     branches: "Two branches", orders: "orders",
     byhour: "Sales by hour", top: "Best sellers today",
-    a_title: "Cendol Pulut sold out at Kampung Baru",
+    a_title: "Nasi Lemak Ayam Goreng sold out at Kampung Baru",
     a_body: "Hidden from every table at 2:14 pm.",
     hint: "Add something on the Customer screen, then switch to Counter — the order appears and a kitchen ticket prints.",
     n1t: "One token system",
@@ -1077,7 +1190,12 @@ const money = sen => "RM " + (sen / 100).toFixed(2);
    ============================================================ */
 const state = {
   cat: CATS[0].id,
-  cart: {},          // itemId -> qty
+  // Lines, not a tally: two teh tariks ordered differently are two lines.
+  // Matches CartLine in apps/menu/src/cart.ts.
+  cart: [],          // { lineId, itemId, qty, picks: [{g,o}], note }
+  view: "menu",      // menu | cart
+  sheet: null,       // { itemId, qty, picks, note } while the sheet is open
+  lineSeq: 0,
   orders: [],        // append-only
   seq: 1841,
   tables: [
@@ -1127,7 +1245,8 @@ function renderMenu() {
       m.tags.includes("hot")   ? `<span class="tag tag-hot">${lang === "ms" ? "Pedas" : "Spicy"}</span>` : "",
       m.tags.includes("halal") ? `<span class="tag tag-halal">Halal</span>` : ""
     ].join("");
-    const q = state.cart[m.id] || 0;
+    const q = state.cart.filter(l => l.itemId === m.id)
+                        .reduce((sum, l) => sum + l.qty, 0);
     const cat = CATS.find(c => c.id === m.cat);
     const label = shortLabel(m[lang], cat ? cat[lang] : "");
     // The printed menu carries no dish descriptions, so most items have none;
@@ -1159,12 +1278,29 @@ function renderEmptyCategory() {
   }
 }
 
+/** What one line costs: the dish plus whatever its chosen options add. */
+function lineSen(line) {
+  const m = MENU.find(x => x.id === line.itemId);
+  if (!m) return 0;
+  const extra = (line.picks || []).reduce((sum, p) => {
+    const opt = m.groups?.[p.g]?.options?.[p.o];
+    return sum + (opt ? opt.sen : 0);
+  }, 0);
+  return (m.sen + extra) * line.qty;
+}
+
+/** The chosen options, in the language showing now rather than the one that
+    was showing when the dish was added. */
+function lineChoices(line) {
+  const m = MENU.find(x => x.id === line.itemId);
+  return (line.picks || [])
+    .map(p => m?.groups?.[p.g]?.options?.[p.o]?.[lang])
+    .filter(Boolean);
+}
+
 function cartTotals() {
   let n = 0, sen = 0;
-  for (const [id, q] of Object.entries(state.cart)) {
-    const m = MENU.find(x => x.id === id);
-    n += q; sen += m.sen * q;
-  }
+  for (const line of state.cart) { n += line.qty; sen += lineSen(line); }
   return { n, sen };
 }
 
@@ -1172,15 +1308,69 @@ function renderCart() {
   const { n, sen } = cartTotals();
   $("#cartCount").textContent = n;
   $("#cartTotal").textContent = money(sen);
-  $("#cartBar").classList.toggle("is-up", n > 0);
+  // The bar stays up on the review screen, but as a total rather than a way
+  // back into a screen you are already looking at.
+  $("#cartBar").classList.toggle("is-up", n > 0 && state.view === "menu");
+
+  $("#menuView").hidden = state.view !== "menu";
+  $("#cartView").hidden = state.view !== "cart";
+  if (state.view === "cart") renderCartLines();
+}
+
+/** The review screen: what you picked, and how to take it back out. */
+function renderCartLines() {
+  const wrap = $("#cartLines");
+  const foot = $("#cartFoot");
+
+  if (!state.cart.length) {
+    wrap.innerHTML = `<p class="cart-empty">${t("empty_cart")}</p>`;
+    foot.innerHTML = "";
+    return;
+  }
+
+  wrap.innerHTML = state.cart.map(line => {
+    const m = MENU.find(x => x.id === line.itemId);
+    if (!m) return "";
+    // The full name here, not the shortened one: the category heading that
+    // made "Kampung" readable is not on this screen.
+    const detail = [...lineChoices(line), line.note].filter(Boolean).join(" · ");
+    return `<div class="line-item" data-line="${line.lineId}">
+      <span class="line-qty">${line.qty}×</span>
+      <div class="line-body">
+        <div class="line-name">${m[lang]}</div>
+        ${detail ? `<div class="line-opts">${detail}</div>` : ""}
+        <div class="line-actions">
+          <div class="stepper">
+            <button data-qty="${line.lineId}" data-by="-1" aria-label="−">−</button>
+            <span class="num">${line.qty}</span>
+            <button data-qty="${line.lineId}" data-by="1" aria-label="+">+</button>
+          </div>
+          <button class="line-remove" data-drop="${line.lineId}">${t("remove")}</button>
+        </div>
+      </div>
+      <span class="line-sen">${money(lineSen(line))}</span>
+    </div>`;
+  }).join("");
+
+  const { sen } = cartTotals();
+  foot.innerHTML = `<div class="total-row">
+      <span>${t("total")}</span><span class="num">${money(sen)}</span>
+    </div>
+    <button class="btn btn-accent" id="placeBtn" style="width:100%">${t("place")}</button>`;
 }
 
 function renderStatus() {
   const mount = $("#statusMount");
   if (!state.orders.length) { mount.innerHTML = ""; return; }
   const lines = state.orders.flatMap(o => o.lines);
+  // Merge on the dish *and* its choices, so a teh tarik panas and a teh tarik
+  // ais stay two rows rather than collapsing into "2× Teh Tarik".
   const merged = {};
-  lines.forEach(l => { merged[l.id] = (merged[l.id] || 0) + l.q; });
+  lines.forEach(l => {
+    const key = [l.id, ...(l.choices || [])].join("|");
+    merged[key] = merged[key] || { id: l.id, choices: l.choices || [], q: 0 };
+    merged[key].q += l.q;
+  });
   const eta = Math.max(...lines.map(l => MENU.find(m => m.id === l.id).prep));
   const stage = state.orders.some(o => o.status === "served") ? 3
               : state.orders.some(o => o.status === "printed") ? 2 : 1;
@@ -1197,9 +1387,10 @@ function renderStatus() {
     </div>
     <div class="track-labels"><span>${t("st_1")}</span><span>${t("st_2")}</span><span>${t("st_3")}</span></div>
     <div class="status-items">
-      ${Object.entries(merged).map(([id, q]) => {
-        const m = MENU.find(x => x.id === id);
-        return `<div class="status-item"><span>${q}× ${m[lang]}</span><span class="num">${money(m.sen * q)}</span></div>`;
+      ${Object.values(merged).map(row => {
+        const m = MENU.find(x => x.id === row.id);
+        const detail = row.choices.length ? ` <small>${row.choices.join(" · ")}</small>` : "";
+        return `<div class="status-item"><span>${row.q}× ${m[lang]}${detail}</span><span class="num">${money(m.sen * row.q)}</span></div>`;
       }).join("")}
     </div>
   </div>`;
@@ -1228,7 +1419,9 @@ function renderFeed() {
       <div class="ticket-lines">
         ${o.lines.map(l => {
           const m = MENU.find(x => x.id === l.id);
-          return `<div class="ticket-line"><span class="ticket-qty">${l.q}×</span><span>${m[lang]}</span></div>`;
+          const detail = [...(l.choices || []), l.note].filter(Boolean).join(" · ");
+          return `<div class="ticket-line"><span class="ticket-qty">${l.q}×</span><span>${m[lang]}${
+            detail ? ` <span class="ticket-note">${detail}</span>` : ""}</span></div>`;
         }).join("")}
       </div>
       <div class="ticket-acts">
@@ -1250,7 +1443,13 @@ function renderReceipt(o) {
     <hr>
     ${o.lines.map(l => {
       const m = MENU.find(x => x.id === l.id);
-      return `<div class="rc-row"><span>${l.q}x</span><span>${(m.ms).toUpperCase()}</span></div>`;
+      // The choices and the note go on the slip. A docket that says only
+      // "MEE KUNGFU" sends out the wrong noodle.
+      const extra = [
+        ...(l.choices || []).map(c => `<div class="rc-row"><span></span><span>+ ${c}</span></div>`),
+        l.note ? `<div class="rc-row"><span></span><span>** ${l.note}</span></div>` : "",
+      ].join("");
+      return `<div class="rc-row"><span>${l.q}x</span><span>${(m.ms).toUpperCase()}</span></div>${extra}`;
     }).join("")}
     <hr>
     <div class="rc-center">*** DAPUR ***</div>
@@ -1288,17 +1487,111 @@ function applyI18n() {
 }
 
 let toastTimer;
-/* Undo where the mistake happens. Tapping the wrong dish is the commonest
+/* ---- the dish sheet ----
+   Mirrors apps/menu/src/screens/ItemSheet.tsx: every dish opens it, because
+   half the menu has options and a customer should not have to guess which. */
+const CHIPS = [
+  { ms: "Kurang manis", en: "Less sweet" },
+  { ms: "Kurang pedas", en: "Less spicy" },
+  { ms: "Tanpa cili", en: "No chilli" },
+  { ms: "Kurang nasi", en: "Less rice" },
+  { ms: "Bungkus", en: "Takeaway" },
+];
+const NOTE_MAX = 120;
+
+function openSheet(itemId) {
+  state.sheet = { itemId, qty: 1, picks: [], note: "" };
+  renderSheet();
+}
+
+function closeSheet() {
+  state.sheet = null;
+  $("#sheetVeil").hidden = true;
+}
+
+/** Every required group answered — the same rule the server enforces. */
+function sheetSatisfied() {
+  const m = MENU.find(x => x.id === state.sheet.itemId);
+  return (m.groups || []).every((g, gi) => {
+    const n = state.sheet.picks.filter(p => p.g === gi).length;
+    return n >= g.min && n <= g.max;
+  });
+}
+
+function sheetTotalSen() {
+  const m = MENU.find(x => x.id === state.sheet.itemId);
+  const extra = state.sheet.picks.reduce(
+    (sum, p) => sum + (m.groups?.[p.g]?.options?.[p.o]?.sen || 0), 0);
+  return (m.sen + extra) * state.sheet.qty;
+}
+
+function renderSheet() {
+  const sh = state.sheet;
+  if (!sh) return;
+  const m = MENU.find(x => x.id === sh.itemId);
+  const chosenNotes = sh.note.split(",").map(x => x.trim()).filter(Boolean);
+
+  $("#dishSheet").innerHTML = `
+    <div class="sheet-grab"></div>
+    <div class="sheet-head">
+      <div class="sheet-art">${ART[m.art]}</div>
+      <div>
+        <div class="sheet-name">${m[lang]}</div>
+        <div class="sheet-price">${money(m.sen)}</div>
+      </div>
+    </div>
+    ${(m.groups || []).map((g, gi) => `
+      <div class="opt-group">
+        <div class="opt-head">
+          <span class="opt-name">${g[lang]}</span>
+          <span class="opt-rule ${g.min > 0 ? "is-required" : ""}">${
+            g.min > 0 ? t("required") : `${t("choose_upto")} ${g.max}`}</span>
+        </div>
+        ${g.options.map((o, oi) => `
+          <button class="opt" data-pick="${gi}:${oi}"
+                  aria-pressed="${sh.picks.some(p => p.g === gi && p.o === oi)}">
+            <span class="opt-mark"></span>
+            <span class="opt-label">${o[lang]}</span>
+            ${o.sen ? `<span class="opt-delta">+${money(o.sen)}</span>` : ""}
+          </button>`).join("")}
+      </div>`).join("")}
+
+    <div class="req-block">
+      <div class="opt-head">
+        <span class="opt-name">${t("request_title")}</span>
+        <span class="opt-rule">${t("request_hint")}</span>
+      </div>
+      <div class="chips">
+        ${CHIPS.map((c, ci) => `<button class="chip" data-chip="${ci}"
+           aria-pressed="${chosenNotes.includes(c[lang])}">${c[lang]}</button>`).join("")}
+      </div>
+      <textarea class="notes-input" id="sheetNote" rows="2" maxlength="${NOTE_MAX}"
+        placeholder="${t("notes_ph")}">${sh.note}</textarea>
+    </div>
+
+    <div class="sheet-foot">
+      <div class="stepper">
+        <button data-sheetqty="-1">−</button>
+        <span class="num">${sh.qty}</span>
+        <button data-sheetqty="1">+</button>
+      </div>
+      <button class="btn btn-accent sheet-add" id="sheetAdd"
+        ${sheetSatisfied() ? "" : "disabled"}>${t("add")} · ${money(sheetTotalSen())}</button>
+    </div>`;
+  $("#sheetVeil").hidden = false;
+}
+
+/** Undo where the mistake happens. Tapping the wrong dish is the commonest
    thing a customer does on this screen; without this the fix is three taps
    away inside a cart they have to think to open. */
 let undoTimer;
-function showUndo(id) {
-  const m = MENU.find(x => x.id === id);
+function showUndo(line) {
+  const m = MENU.find(x => x.id === line.itemId);
   if (!m) return;
   const el = $("#undoBar");
   el.innerHTML =
-    `<span class="undo-label">${lang === "ms" ? "Ditambah" : "Added"}: ${m[lang]}</span>` +
-    `<button class="undo-action" data-undo="${id}">${lang === "ms" ? "Batal" : "Undo"}</button>`;
+    `<span class="undo-label">${t("added")}: ${m[lang]}</span>` +
+    `<button class="undo-action" data-undo="${line.lineId}">${t("undo")}</button>`;
   el.classList.add("is-up");
   clearTimeout(undoTimer);
   undoTimer = setTimeout(hideUndo, 6000);
@@ -1325,23 +1618,108 @@ function renderAll() {
 /* ============================================================
    Interactions
    ============================================================ */
+
+/* Typing in the note updates state without re-rendering the sheet — a redraw
+   on every keystroke would throw the caret to the end of the line. The chips
+   redraw deliberately, because they change what is selected. */
+document.addEventListener("input", e => {
+  if (e.target.id === "sheetNote" && state.sheet) {
+    state.sheet.note = e.target.value;
+  }
+});
+
 document.addEventListener("click", e => {
+  // Every dish opens its sheet: options, quantity, and a note for the kitchen.
   const add = e.target.closest("[data-add]");
-  if (add) {
-    const id = add.dataset.add;
-    state.cart[id] = (state.cart[id] || 0) + 1;
-    renderMenu(); renderEmptyCategory(); renderCart();
-    showUndo(id);
+  if (add) { openSheet(add.dataset.add); return; }
+
+  const pick = e.target.closest("[data-pick]");
+  if (pick) {
+    const [g, o] = pick.dataset.pick.split(":").map(Number);
+    const group = MENU.find(x => x.id === state.sheet.itemId).groups[g];
+    const mine = state.sheet.picks.filter(p => p.g === g);
+    const rest = state.sheet.picks.filter(p => p.g !== g);
+    if (mine.some(p => p.o === o)) {
+      state.sheet.picks = [...rest, ...mine.filter(p => p.o !== o)];
+    } else if (group.max === 1) {
+      state.sheet.picks = [...rest, { g, o }];       // radio: replace
+    } else if (mine.length < group.max) {
+      state.sheet.picks = [...rest, ...mine, { g, o }];
+    }
+    renderSheet();
     return;
   }
 
+  const chip = e.target.closest("[data-chip]");
+  if (chip) {
+    const label = CHIPS[Number(chip.dataset.chip)][lang];
+    const parts = state.sheet.note.split(",").map(x => x.trim()).filter(Boolean);
+    state.sheet.note = (parts.includes(label)
+      ? parts.filter(x => x !== label)
+      : [...parts, label]).join(", ").slice(0, NOTE_MAX);
+    renderSheet();
+    return;
+  }
+
+  const sqty = e.target.closest("[data-sheetqty]");
+  if (sqty) {
+    state.sheet.qty = Math.min(20, Math.max(1, state.sheet.qty + Number(sqty.dataset.sheetqty)));
+    renderSheet();
+    return;
+  }
+
+  if (e.target.closest("#sheetAdd")) {
+    const line = {
+      lineId: "l" + (++state.lineSeq),
+      itemId: state.sheet.itemId,
+      qty: state.sheet.qty,
+      picks: state.sheet.picks,
+      note: state.sheet.note.trim(),
+    };
+    state.cart.push(line);
+    closeSheet();
+    renderMenu(); renderEmptyCategory(); renderCart();
+    showUndo(line);
+    return;
+  }
+
+  // Tapping the veil, but not the sheet itself, closes it.
+  if (e.target.id === "sheetVeil") { closeSheet(); return; }
+
   const undo = e.target.closest("[data-undo]");
   if (undo) {
-    const id = undo.dataset.undo;
-    if (state.cart[id] > 1) state.cart[id] -= 1; else delete state.cart[id];
+    state.cart = state.cart.filter(l => l.lineId !== undo.dataset.undo);
     hideUndo();
     renderMenu(); renderEmptyCategory(); renderCart();
     return;
+  }
+
+  const drop = e.target.closest("[data-drop]");
+  if (drop) {
+    state.cart = state.cart.filter(l => l.lineId !== drop.dataset.drop);
+    renderMenu(); renderEmptyCategory(); renderCart();
+    return;
+  }
+
+  const qty = e.target.closest("[data-qty]");
+  if (qty) {
+    const id = qty.dataset.qty;
+    const by = Number(qty.dataset.by);
+    const line = state.cart.find(l => l.lineId === id);
+    if (!line) return;
+    // Down to nothing removes the line; changing the count must never throw
+    // away the options and the note that went with it.
+    if (line.qty + by < 1) state.cart = state.cart.filter(l => l.lineId !== id);
+    else line.qty += by;
+    renderMenu(); renderEmptyCategory(); renderCart();
+    return;
+  }
+
+  if (e.target.closest("#viewCartBtn")) {
+    state.view = "cart"; hideUndo(); renderCart(); return;
+  }
+  if (e.target.closest("#backToMenu")) {
+    state.view = "menu"; renderCart(); return;
   }
 
   const cat = e.target.closest("[data-cat]");
@@ -1373,11 +1751,21 @@ document.addEventListener("click", e => {
   }
 });
 
-$("#placeBtn").addEventListener("click", () => {
+/* The send button lives inside the cart screen now, so it is re-created on
+   every render — delegate rather than bind to a node that will be replaced. */
+document.addEventListener("click", e => {
+  if (!e.target.closest("#placeBtn")) return;
   const { n } = cartTotals();
   if (!n) return;
 
-  const lines = Object.entries(state.cart).map(([id, q]) => ({ id, q }));
+  // Lines carry their choices through to the kitchen, exactly as the real
+  // order payload does — a docket that omits "kuetiau" is the wrong food.
+  const lines = state.cart.map(l => ({
+    id: l.itemId,
+    q: l.qty,
+    choices: lineChoices(l),
+    note: l.note || "",
+  }));
   const now = new Date();
   const order = {
     id: ++state.seq,
@@ -1388,7 +1776,9 @@ $("#placeBtn").addEventListener("click", () => {
     fresh: true
   };
   state.orders.push(order);
-  state.cart = {};
+  state.cart = [];
+  state.view = "menu";
+  hideUndo();
 
   const tb = state.tables.find(x => x.c === "M05");
   tb.s = "ordering"; tb.m = "…";
