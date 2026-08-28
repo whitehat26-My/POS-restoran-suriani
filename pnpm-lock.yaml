@@ -90,6 +90,9 @@ importers:
       '@suriani/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@suriani/offline':
+        specifier: workspace:*
+        version: link:../../packages/offline
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -116,6 +119,19 @@ importers:
   packages/core: {}
 
   packages/escpos:
+    devDependencies:
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@26.2.0)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(tsx@4.23.12))
+
+  packages/offline:
+    dependencies:
+      '@suriani/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       typescript:
         specifier: ^6.0.3

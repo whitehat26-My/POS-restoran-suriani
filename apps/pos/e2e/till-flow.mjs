@@ -129,9 +129,16 @@ const filtered = await pos.$$eval('.mi', (rows) => rows.length);
 filtered === 1 || fail(`menu search should leave one row, left ${filtered}`);
 ok('menu search finds a dish among 147');
 
+// Toggle rather than assert a fixed end state, so re-running this script
+// against a database it already touched still means something.
+const is86 = async (dish) =>
+  (await pos.getAttribute(`.mi:has-text("${dish}")`, 'class')).includes('is-86');
+const was86 = await is86('Lamb Chop');
 await pos.click('.mi:has-text("Lamb Chop") .mi-86');
-await pos.waitForSelector('.mi.is-86:has-text("Lamb Chop")');
-ok('Lamb Chop 86ed on the till');
+await pos.waitForSelector(
+  was86 ? '.mi:not(.is-86):has-text("Lamb Chop")' : '.mi.is-86:has-text("Lamb Chop")',
+);
+ok(`Lamb Chop ${was86 ? 'un-86ed' : '86ed'} on the till`);
 await pos.fill('[data-testid="menu-search"]', '');
 
 // --- The owner's daily record ---
@@ -144,6 +151,83 @@ const detailText = await pos.textContent('[data-testid="day-detail"]');
 detailText.includes('Jualan') || fail('day detail missing the sales headline');
 detailText.includes('Teh Tarik') || fail('day detail missing the dish sold');
 ok("today's sale shows in the owner's daily record");
+
+// --- THE OUTAGE DRILL ---------------------------------------------------
+// A staff token for asserting server state directly, independent of the UI.
+const { token } = await (
+  await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone: OWNER_PHONE, pin: OWNER_PIN }),
+  })
+).json();
+const hdr = { Authorization: `Bearer ${token}` };
+
+// Cut the till's line, keep trading, restore it, and prove that every order
+// landed exactly once. This is the whole offline promise, run for real.
+// Start from a known state: the drill 86s Beef Steak with the line down and
+// then asserts the server heard about it, so it must not be 86'd already.
+await pos.fill('[data-testid="menu-search"]', 'Beef Steak');
+await pos.waitForSelector('.mi:has-text("Beef Steak")');
+if (await is86('Beef Steak')) {
+  await pos.click('.mi:has-text("Beef Steak") .mi-86');
+  await pos.waitForSelector('.mi:not(.is-86):has-text("Beef Steak")');
+  await pos.waitForTimeout(800);
+}
+await pos.fill('[data-testid="menu-search"]', '');
+
+await posCtx.setOffline(true);
+ok('till taken offline');
+
+// Two counter orders and an 86, with no line at all.
+for (const dish of ['Chicken Chop', 'Fish and Chip']) {
+  await pos.fill('[data-testid="menu-search"]', dish);
+  await pos.click(`.mi:has-text("${dish}") .mi-name`);
+  await pos.waitForSelector('.sheet');
+  await pos.click('.sheet-foot .btn:has-text("Tambah")');
+  await pos.click('.col .btn-accent:has-text("Hantar")');
+  await pos.click('.veil .tbl >> nth=1');
+  await pos.waitForSelector('.toast:has-text("direkod")', { timeout: 5000 });
+}
+await pos.fill('[data-testid="menu-search"]', 'Beef Steak');
+await pos.click('.mi:has-text("Beef Steak") .mi-86');
+await pos.waitForSelector('.mi.is-86:has-text("Beef Steak")');
+ok('two counter orders and an 86 taken with the line down');
+
+await pos.waitForSelector('[data-testid="outbox-pill"]', { timeout: 8000 });
+const queued = await pos.textContent('[data-testid="outbox-pill"]');
+/[1-9]/.test(queued) || fail(`outbox should show pending work, showed "${queued}"`);
+ok(`till reports work waiting: ${queued.trim()}`);
+
+// The server must have seen none of it.
+const midOutage = await fetch(`${BASE}/api/outlets/${KB}/orders`, { headers: hdr });
+const midCount = (await midOutage.json()).orders.length;
+
+await posCtx.setOffline(false);
+// No tap needed: the browser's own `online` event nudges the syncer, and the
+// pill disappearing is the till saying the queue is empty.
+await pos.waitForSelector('[data-testid="outbox-pill"]', { state: 'detached', timeout: 20000 });
+ok('line restored, outbox drained by itself');
+
+const after = await (await fetch(`${BASE}/api/outlets/${KB}/orders`, { headers: hdr })).json();
+after.orders.length === midCount + 2 ||
+  fail(`expected ${midCount + 2} orders after replay, found ${after.orders.length}`);
+ok('both offline orders landed, exactly once');
+
+// Drain again: a tablet that retries a batch it already sent must not double-bill.
+await pos.reload();
+await pos.waitForSelector('.tbl');
+await pos.waitForTimeout(1500);
+const settled = await (await fetch(`${BASE}/api/outlets/${KB}/orders`, { headers: hdr })).json();
+settled.orders.length === midCount + 2 ||
+  fail(`a reload double-billed: ${settled.orders.length} orders`);
+ok('a reload replays nothing — no double billing');
+
+// And the 86 survived the outage too.
+const menuAfter = await (await fetch(`${BASE}/api/outlets/${KB}/menu`, { headers: hdr })).json();
+const steak = menuAfter.items.find((i) => i.nameMs === 'Beef Steak');
+steak && steak.isAvailable === 0 || fail('the offline 86 never reached the server');
+ok('the 86 taken offline reached the server');
 
 if (posErrors.length) fail('POS page errors: ' + posErrors.join('; '));
 ok('no page errors');

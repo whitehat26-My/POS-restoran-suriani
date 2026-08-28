@@ -46,7 +46,8 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      # ESC/POS golden bytes run in plain node; the API suite runs inside the
-      # real workerd runtime with real D1 and Durable Objects.
+      # ESC/POS golden bytes and the offline engine run in plain node; the API
+      # suite runs inside the real workerd runtime with real D1 and Durable
+      # Objects.
       - name: Test
         run: pnpm test

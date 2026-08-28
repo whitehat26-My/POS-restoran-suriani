@@ -5,7 +5,7 @@
   "description": "Multi-tenant QR-ordering POS for Malaysian restaurants",
   "scripts": {
     "dev": "pnpm --filter @suriani/api dev",
-    "test": "pnpm --filter @suriani/escpos test && pnpm --filter @suriani/api test",
+    "test": "pnpm --filter @suriani/escpos test && pnpm --filter @suriani/offline test && pnpm --filter @suriani/api test",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "pnpm -r --if-present lint",
     "seed": "pnpm --filter @suriani/api seed",

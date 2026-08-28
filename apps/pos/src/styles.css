@@ -62,6 +62,10 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
   background: var(--pos-raised); border: 1px solid var(--pos-edge);
 }
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+/* The outbox pill. Only visible when something is waiting, because a count of
+   zero is noise — but when it is visible it has to be, since it means the
+   restaurant is trading ahead of the server. */
+button.pill { cursor: pointer; }
 .dot-ok { background: var(--pandan); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pandan) 25%, transparent); }
 .dot-warn { background: var(--tarik); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tarik) 25%, transparent); animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: .4; } }

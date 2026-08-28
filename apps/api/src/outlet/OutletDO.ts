@@ -121,6 +121,31 @@ export interface PlaceOrderLine {
   modifierOptionIds?: string[];
 }
 
+/** One entry from a device's op log. Mirrors @suriani/offline's `Op`. */
+export interface SyncOp {
+  clientUlid: string;
+  deviceId?: string;
+  /** The device's clock, preserved so replayed sales land on the right day. */
+  at: number;
+  body:
+    | {
+        kind: "order.place";
+        tableId: string;
+        lines: PlaceOrderLine[];
+        expectedTotalSen?: Sen;
+      }
+    | { kind: "order.serve"; orderId: string }
+    | { kind: "session.close"; sessionId: string }
+    | { kind: "item.availability"; itemId: string; available: boolean };
+}
+
+export interface SyncOpResult {
+  clientUlid: string;
+  status: "applied" | "duplicate" | "rejected";
+  error?: string;
+  orderId?: string;
+}
+
 export interface PlaceOrderInput {
   /** Customer path: the table's QR secret. */
   qrToken?: string;
@@ -134,6 +159,25 @@ export interface PlaceOrderInput {
   clientUlid?: string;
   source?: "qr" | "counter";
   deviceId?: string;
+  /**
+   * This order was taken while the till was offline and is being replayed.
+   *
+   * It skips the 86 check, because the food was ordered hours ago and very
+   * likely eaten: refusing to record it means the restaurant serves a plate
+   * it never bills for. 86-ing exists to stop *new* orders, not to erase old
+   * ones. The skip is audited.
+   */
+  replay?: boolean;
+  /** When the till took it. Replay preserves the real time, not sync time. */
+  placedAt?: number;
+  /**
+   * What the till showed the customer, for reconciliation only.
+   *
+   * Never used to bill. The server prices from its own tables exactly as it
+   * always has; this is here so that a divergence — the owner edited a price
+   * during the outage — lands in the audit log instead of in the accounts.
+   */
+  expectedTotalSen?: Sen;
 }
 
 export interface PlacedOrder {
@@ -775,6 +819,18 @@ export class OutletDO extends DurableObject<Env> {
   }
 
   /**
+   * The audit trail, newest first.
+   *
+   * Every void, every price divergence, every rotated QR. Phase 7's owner
+   * console reads this; for now it is how a support question gets an answer
+   * instead of a shrug.
+   */
+  async recentAudit(limit = 50) {
+    const rows = await this.db.select().from(schema.auditLog);
+    return rows.sort((a, b) => b.at - a.at).slice(0, Math.min(limit, 500));
+  }
+
+  /**
    * Create tables in one call.
    *
    * Labels come from the caller rather than being expanded from a pattern
@@ -1150,7 +1206,9 @@ export class OutletDO extends DurableObject<Env> {
       };
     }
 
-    const now = Date.now();
+    // A replayed order keeps the time the till actually took it, so the
+    // daily record puts last night's takings on last night.
+    const now = input.placedAt ?? Date.now();
 
     // Join the table's open bill, or open one. Two phones at the same table
     // land on the same session — that is the feature, not an accident.
@@ -1225,8 +1283,9 @@ export class OutletDO extends DurableObject<Env> {
         return { ok: false, error: "unknown_item", detail: line.menuItemId };
       }
       // 86-ing: an item marked habis stops being orderable immediately, even
-      // for a phone already sitting on the menu page.
-      if (item.isAvailable === 0) {
+      // for a phone already sitting on the menu page. A replayed order is
+      // exempt — see PlaceOrderInput.replay.
+      if (item.isAvailable === 0 && input.replay !== true) {
         return { ok: false, error: "unavailable", detail: item.nameMs };
       }
 
@@ -1319,6 +1378,29 @@ export class OutletDO extends DurableObject<Env> {
       payload: JSON.stringify({ orderId, sessionId: session.id, totalSen }),
       appliedAt: now,
     });
+
+    if (input.replay === true) {
+      await this.audit(
+        "order.replayed",
+        JSON.stringify({ orderId, clientUlid, placedAt: now, totalSen }),
+      );
+      // The till's number and the server's number should agree. When they do
+      // not, someone edited a price during the outage — record it rather than
+      // let it surface as an unexplained few ringgit in the month's accounts.
+      if (
+        input.expectedTotalSen !== undefined &&
+        input.expectedTotalSen !== totalSen
+      ) {
+        await this.audit(
+          "order.price_divergence",
+          JSON.stringify({
+            orderId,
+            tillTotalSen: input.expectedTotalSen,
+            serverTotalSen: totalSen,
+          }),
+        );
+      }
+    }
 
     // Fan the order out to its stations. Lines are grouped by the station
     // their menu category routes to, so a mixed order becomes one docket for
@@ -2184,6 +2266,203 @@ export class OutletDO extends DurableObject<Env> {
           }
         : null,
     };
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Sync
+   *
+   * A tablet that traded through an outage hands over its op log. This is the
+   * one place the two halves of the product meet, and it holds because the
+   * Durable Object is single-threaded: ops apply in the order they arrive,
+   * one batch at a time, with nothing racing them.
+   * ---------------------------------------------------------------- */
+
+  /**
+   * Apply a device's ops, in order, exactly once each.
+   *
+   * Three properties this has to have, and each one is a real failure it
+   * prevents:
+   *
+   *  1. **Idempotent.** `op_log.client_ulid` is UNIQUE and every op is keyed
+   *     by a ULID the device minted before its first attempt. A tablet that
+   *     sends a batch, loses the reply and retries bills nobody twice.
+   *
+   *  2. **Ordered.** Applied in array order, so "serve order X" cannot land
+   *     before "place order X" and 404.
+   *
+   *  3. **One bad op cannot block the queue.** An op that can never succeed
+   *     is answered `rejected`, so the device drops it and keeps going.
+   *     Retrying it forever would wedge every order queued behind it — which
+   *     is how an outage turns into a lost evening.
+   */
+  async applyOps(input: {
+    ops: SyncOp[];
+    userId?: string;
+  }): Promise<{ results: SyncOpResult[] }> {
+    const results: SyncOpResult[] = [];
+
+    for (const op of input.ops) {
+      if (!op?.clientUlid || !op.body?.kind) {
+        results.push({
+          clientUlid: op?.clientUlid ?? "",
+          status: "rejected",
+          error: "malformed_op",
+        });
+        continue;
+      }
+
+      const seen = (
+        await this.db
+          .select()
+          .from(schema.opLog)
+          .where(eq(schema.opLog.clientUlid, op.clientUlid))
+          .limit(1)
+      )[0];
+      if (seen) {
+        const payload = JSON.parse(seen.payload) as { orderId?: string };
+        results.push({
+          clientUlid: op.clientUlid,
+          status: "duplicate",
+          orderId: payload.orderId,
+        });
+        continue;
+      }
+
+      results.push(await this.applyOne(op, input.userId));
+    }
+
+    return { results };
+  }
+
+  /**
+   * How old an op has to be before it counts as replayed rather than live.
+   *
+   * The till writes every action to its outbox and sends it immediately, so a
+   * normal counter order reaches here within a second or two. Anything much
+   * older sat in the outbox through an outage.
+   *
+   * This matters because a replay bypasses the 86 check, and the *server* has
+   * to be the one deciding that — not a flag the client sets. Otherwise the
+   * till could turn off a server-side rule by asking nicely, which is exactly
+   * the shape of the price-trust bug Phase 2b closed.
+   *
+   * It fails safe: a device whose clock runs fast looks live and gets the
+   * stricter path.
+   */
+  private static readonly REPLAY_AFTER_MS = 60_000;
+
+  private async applyOne(op: SyncOp, userId?: string): Promise<SyncOpResult> {
+    const body = op.body;
+    const age = Date.now() - op.at;
+    const replay = age > OutletDO.REPLAY_AFTER_MS;
+
+    switch (body.kind) {
+      case "order.place": {
+        const placed = await this.placeOrder({
+          tableId: body.tableId,
+          lines: body.lines,
+          clientUlid: op.clientUlid,
+          source: "counter",
+          deviceId: op.deviceId,
+          replay,
+          // Only a replay is trusted to say when it happened. A live op uses
+          // server time, so a tablet with a slow clock cannot post today's
+          // sales to yesterday.
+          placedAt: replay ? op.at : undefined,
+          expectedTotalSen: body.expectedTotalSen,
+        });
+        if (!placed.ok) {
+          // unknown_table and unknown_item can never come good; the dish or
+          // the table is gone. Answer rejected so the device stops trying.
+          return {
+            clientUlid: op.clientUlid,
+            status: "rejected",
+            error: placed.error,
+          };
+        }
+        return {
+          clientUlid: op.clientUlid,
+          status: placed.order.duplicate ? "duplicate" : "applied",
+          orderId: placed.order.orderId,
+        };
+      }
+
+      case "order.serve": {
+        const served = await this.markOrderServed({
+          orderId: body.orderId,
+          userId,
+        });
+        if (!served.ok) {
+          return {
+            clientUlid: op.clientUlid,
+            status: "rejected",
+            error: "not_found",
+          };
+        }
+        await this.recordOp(op, { orderId: body.orderId });
+        return { clientUlid: op.clientUlid, status: "applied" };
+      }
+
+      case "session.close": {
+        const closed = await this.closeSession({
+          sessionId: body.sessionId,
+          userId,
+        });
+        // A bill someone else already closed is not a failure — it is the
+        // outcome this op wanted. Treat it as done, not as an error.
+        await this.recordOp(op, { sessionId: body.sessionId });
+        return {
+          clientUlid: op.clientUlid,
+          status: closed.ok ? "applied" : "duplicate",
+        };
+      }
+
+      case "item.availability": {
+        // The only genuinely mutable thing a device can change, so it is the
+        // only place a conflict is possible. Last write wins and the server
+        // is authoritative — that is the entire conflict model.
+        const flipped = await this.setItemAvailability({
+          itemId: body.itemId,
+          available: body.available,
+          userId,
+        });
+        if (!flipped.ok) {
+          return {
+            clientUlid: op.clientUlid,
+            status: "rejected",
+            error: "not_found",
+          };
+        }
+        await this.recordOp(op, { itemId: body.itemId });
+        return { clientUlid: op.clientUlid, status: "applied" };
+      }
+
+      default: {
+        return {
+          clientUlid: op.clientUlid,
+          status: "rejected",
+          error: "unknown_kind",
+        };
+      }
+    }
+  }
+
+  /**
+   * Write the op to the log so a replay is recognised.
+   *
+   * `placeOrder` writes its own entry; everything else records here.
+   */
+  private async recordOp(op: SyncOp, payload: unknown): Promise<void> {
+    await this.db
+      .insert(schema.opLog)
+      .values({
+        clientUlid: op.clientUlid,
+        deviceId: op.deviceId ?? null,
+        kind: op.body.kind,
+        payload: JSON.stringify(payload),
+        appliedAt: Date.now(),
+      })
+      .onConflictDoNothing();
   }
 
   /* ---------------------------------------------------------------- *

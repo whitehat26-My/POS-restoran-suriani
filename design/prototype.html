@@ -1,4 +1,4 @@
-<title>Suriani POS</title>
+<title>Suriani POS — Phase 0 design record</title>
 
 <style>
 /* ============================================================
@@ -516,7 +516,27 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
   .stage { padding: var(--s4) var(--s2); border-radius: var(--r-lg); }
   .phone { border-width: 8px; border-radius: 32px; height: 700px; }
 }
+
+/* Kept deliberately loud. A stale prototype that contradicts the shipped
+   product is worse than no prototype, and this is the file someone opens
+   first because it is the only one that works by double-clicking. */
+.frozen-note {
+  max-width: 980px; margin: 16px auto 0; padding: 12px 16px;
+  border: 2px dashed var(--tarik); border-radius: 12px;
+  background: color-mix(in srgb, var(--tarik) 12%, var(--paper));
+  color: var(--ink); font-size: 13px; line-height: 1.5;
+}
+.frozen-note code { font-family: var(--mono, monospace); font-size: 12px; }
 </style>
+
+<div class="frozen-note">
+  <strong>Phase 0 design record — frozen.</strong>
+  This is the mock-up that was approved before any product code, kept as the
+  record of the approved look. It carries its own hardcoded menu and does
+  <em>not</em> update: the real customer app lives in
+  <code>apps/menu/</code> and is served at <code>/t/&lt;outlet&gt;/&lt;token&gt;</code>,
+  the real till at <code>/pos/</code>. Run <code>pnpm dev</code> to see them.
+</div>
 
 <div class="shell">
 

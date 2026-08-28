@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatMYR } from "@suriani/core/money";
 import { shortLabel } from "@suriani/core/menu";
-import { ulid } from "@suriani/core/ids";
 
 import {
   api,
@@ -16,6 +15,7 @@ import {
   type Zone,
 } from "../api";
 import { openLive, type LiveState } from "../live";
+import { openOfflineTill, type OfflineTill } from "../offline";
 import { BillSheet } from "./BillSheet";
 import { ItemConfig, type ConfiguredLine } from "./ItemConfig";
 import { Records } from "./Records";
@@ -45,6 +45,9 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
   const [menuQuery, setMenuQuery] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [printHealth, setPrintHealth] = useState<PrintHealth | null>(null);
+  const [pendingOps, setPendingOps] = useState(0);
+  const [queueStuck, setQueueStuck] = useState(false);
+  const offline = useRef<OfflineTill | null>(null);
   const toastTimer = useRef<number>(undefined);
 
   const say = useCallback((msg: string) => {
@@ -52,6 +55,34 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 2600);
   }, []);
+
+  // The outbox. Every action the cashier takes is written here before it is
+  // sent, so pulling the plug between the tap and the request loses nothing
+  // and an outage costs latency rather than orders.
+  useEffect(() => {
+    const till = openOfflineTill(
+      outletId,
+      (_state, report) => {
+        setPendingOps(report.pending);
+        setQueueStuck(report.pending > 0);
+      },
+      (rejected) => {
+        // An op the server will never accept: the table was archived, the
+        // dish deleted. It is dropped so the queue behind it keeps moving,
+        // but the cashier has to be told, because a customer is waiting.
+        say(`⚠️ ${rejected.length} tindakan ditolak — sila semak`);
+      },
+    );
+    offline.current = till;
+    if (!till.durable) {
+      say("Amaran: simpanan luar talian tidak tersedia pada peranti ini");
+    }
+    void till.pending().then(setPendingOps);
+    return () => {
+      till.stop();
+      offline.current = null;
+    };
+  }, [outletId, say]);
 
   // Feed + menu load on outlet switch; floor arrives with the WS snapshot.
   useEffect(() => {
@@ -249,33 +280,43 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
 
   const submitCart = async (tableId: string) => {
     setPickTable(false);
-    try {
-      await api.placeCounterOrder(
-        outletId,
-        tableId,
-        cart.map((l) => ({
-          menuItemId: l.menuItemId,
-          qty: l.qty,
-          notes: l.notes,
-          modifierOptionIds: l.optionIds.length ? l.optionIds : undefined,
-        })),
-        ulid(),
-      );
-      setCart([]);
-      say("Pesanan kaunter dihantar");
-    } catch (err) {
-      say(`Gagal: ${(err as Error).message}`);
-    }
+    const till = offline.current;
+    if (!till) return;
+
+    await till.perform({
+      kind: "order.place",
+      tableId,
+      lines: cart.map((l) => ({
+        menuItemId: l.menuItemId,
+        qty: l.qty,
+        notes: l.notes,
+        modifierOptionIds: l.optionIds.length ? l.optionIds : undefined,
+      })),
+      expectedTotalSen: cartTotal,
+    });
+    setCart([]);
+    setPendingOps(await till.pending());
+    // The order exists on this tablet either way. It reaches the kitchen now
+    // if the line is up, and the moment it returns if it is not.
+    say("Pesanan kaunter direkod");
   };
 
   const toggle86 = async (item: MenuItem) => {
     const next = item.isAvailable === 0;
-    try {
-      await api.setAvailability(outletId, item.id, next);
-      say(next ? `${item.nameMs} kembali dijual` : `${item.nameMs} — habis`);
-    } catch {
-      say("Gagal menukar status item");
-    }
+    const till = offline.current;
+    if (!till) return;
+    // Optimistic: the cashier is looking at an empty pot, so the menu column
+    // should agree with them immediately rather than after a round trip.
+    setItems((prev) =>
+      prev.map((i) => (i.id === item.id ? { ...i, isAvailable: next ? 1 : 0 } : i)),
+    );
+    await till.perform({
+      kind: "item.availability",
+      itemId: item.id,
+      available: next,
+    });
+    setPendingOps(await till.pending());
+    say(next ? `${item.nameMs} kembali dijual` : `${item.nameMs} — habis`);
   };
 
   return (
@@ -320,6 +361,17 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
             <span className={`dot ${live === "live" ? "dot-ok" : "dot-warn"}`} />
             {live === "live" ? "Langsung" : "Menyambung…"}
           </span>
+          {pendingOps > 0 && (
+            <button
+              className="pill"
+              data-testid="outbox-pill"
+              title="Tindakan menunggu dihantar. Tekan untuk cuba lagi."
+              onClick={() => offline.current?.nudge()}
+            >
+              <span className={`dot ${queueStuck ? "dot-warn" : "dot-ok"}`} />
+              {pendingOps} menunggu
+            </button>
+          )}
           {printHealth && (
             <span className="pill">
               <span
@@ -448,9 +500,20 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
                 <div className="ticket-acts">
                   <button
                     className="mini mini-go"
-                    onClick={() =>
-                      api.serve(outletId, t.id).catch(() => say("Gagal"))
-                    }
+                    onClick={() => {
+                      // Optimistic, then queued: a plate that has left the
+                      // kitchen has left it whether the wifi agrees or not.
+                      setTickets((prev) =>
+                        prev.map((x) =>
+                          x.id === t.id ? { ...x, status: "served" } : x,
+                        ),
+                      );
+                      void offline.current
+                        ?.perform({ kind: "order.serve", orderId: t.id })
+                        .then(async () =>
+                          setPendingOps((await offline.current?.pending()) ?? 0),
+                        );
+                    }}
                   >
                     Sudah dihidang
                   </button>

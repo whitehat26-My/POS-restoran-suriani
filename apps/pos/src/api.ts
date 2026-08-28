@@ -176,11 +176,6 @@ export const api = {
       json<BillSheet>,
     ),
 
-  serve: (outletId: string, orderId: string) =>
-    fetch(`/api/outlets/${outletId}/orders/${orderId}/served`, {
-      method: "POST",
-    }).then(json<{ ok: boolean }>),
-
   dailySales: (outletId: string, days = 30) =>
     fetch(`/api/outlets/${outletId}/reports/daily?days=${days}`).then(
       json<{ days: DayRow[] }>,
@@ -201,30 +196,15 @@ export const api = {
       method: "POST",
     }).then(json<{ ok: boolean }>),
 
-  setAvailability: (outletId: string, itemId: string, available: boolean) =>
-    fetch(`/api/outlets/${outletId}/items/${itemId}/availability`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ available }),
-    }).then(json<{ ok: boolean }>),
-
-  placeCounterOrder: (
-    outletId: string,
-    tableId: string,
-    lines: {
-      menuItemId: string;
-      qty: number;
-      notes?: string;
-      modifierOptionIds?: string[];
-    }[],
-    clientUlid: string,
-  ) =>
-    fetch(`/api/outlets/${outletId}/orders`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tableId, lines, clientUlid }),
-    }).then(json<{ orderId: string; totalSen: Sen }>),
 };
+
+/*
+ * Counter orders, serve and 86 are deliberately absent here.
+ *
+ * They go through the outbox in offline.ts instead — one path whether the
+ * line is up or down, so the offline case is the case that runs every day
+ * rather than a rarely-exercised branch that only matters during an outage.
+ */
 
 export interface PrintHealth {
   queued: number;

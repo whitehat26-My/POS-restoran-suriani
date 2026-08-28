@@ -10,8 +10,8 @@ Two branches of Restoran Suriani are customer zero.
 
 ## Status
 
-**Phase 4c complete.** The restaurant's real printed menu — 13 sections, 147 dishes, and the
-card's RM 0.50 rule — behind a request box on every dish, a printable bill, and a daily record.
+**Phase 5 (offline engine) complete.** Cut the till's line and it keeps taking orders; restore it
+and every order lands exactly once. Proven in the browser, not promised.
 
 | Phase | | |
 |---|---|---|
@@ -23,7 +23,8 @@ card's RM 0.50 rule — behind a request box on every dish, a printable bill, an
 | 4 | Print pipeline — ESC/POS, station routing, retry, reprint | ✅ |
 | 4b | Per-dish requests, printable bill, daily record history | ✅ |
 | 4c | The real printed menu — 13 sections, 147 dishes, the RM 0.50 rule | ✅ |
-| 5 | Android POS shell — offline, dual-transport printing | next |
+| 5 | Offline engine — op log, outbox, replay-safe sync | ✅ |
+| 5b | Android shell — Capacitor, native TCP + Bluetooth printing, APK | next |
 
 Full plan and roadmap: [`docs/PLAN.md`](docs/PLAN.md).
 
@@ -105,7 +106,7 @@ kitchen has 86'd stays 86'd, and table QR codes are never touched. Deleting a di
 `order_items` snapshots the name and price — last month's bill still reads correctly without it.
 
 ```bash
-pnpm test        # 119 tests (17 ESC/POS golden bytes + 102 in the Workers runtime)
+pnpm test        # 143 tests (17 ESC/POS golden bytes + 11 offline + 115 in the Workers runtime)
 pnpm typecheck
 pnpm lint
 ```
@@ -137,7 +138,8 @@ apps/api/            Cloudflare Worker — API, control plane, outlet Durable Ob
   src/outlet/        per-outlet schema, migrations, Durable Object
   src/control/       D1 schema: orgs, users, outlets, devices, usage
   test/              isolation · onboarding · tables · modifiers · pricing ·
-                     realtime · printing · money · menu-sync · reports · menu-data
+                     realtime · printing · money · menu-sync · reports ·
+                     menu-data · sync
 apps/menu/           customer ordering app (Vite + React), served at /
 apps/pos/            the till and the owner's daily record (Vite + React, dark), at /pos/
                      — both assembled into apps/api/.assets by `pnpm build:web`;
@@ -145,10 +147,12 @@ apps/pos/            the till and the owner's daily record (Vite + React, dark),
 packages/core/       shared money arithmetic, ids and menu labelling — one
                      implementation for the API, the customer app, and later
                      the tablet
+packages/offline/    the till's offline spine: op log, outbox, drain loop
 packages/escpos/     ESC/POS encoder + ticket templates, golden-byte tested
 tools/printer-sim/   a thermal printer that isn't there (TCP :9100)
 tools/print-agent/   claims jobs, prints, acks; reference for Phase 5 Android
-design/              tokens.css and the Phase 0 clickable prototype
+design/              tokens.css, and the Phase 0 prototype kept frozen as the
+                     record of the approved look — it is NOT the app
 docs/PLAN.md         product plan, architecture, phasing
 ```
 
@@ -177,6 +181,47 @@ column for counter orders and 86-ing.
   renderer with a method and gets a paid receipt with the pulse.
 - Closing a bill is the primitive Phase 6's payments will front — explicit and audit-logged,
   never silent.
+
+## Trading through an outage
+
+Most Malaysian POS SaaS dies when the shop's internet dies. This one does not, and the mechanism is
+small enough to describe in a paragraph.
+
+**Every action a cashier takes is written to a durable outbox before it is sent.** A counter order,
+a *sudah dihidang*, a closed bill, an 86 — each becomes an op with a ULID minted on the device, kept
+in IndexedDB, and drained to `POST /api/outlets/:id/sync` when the line allows. With the line up
+that is a few milliseconds nobody notices. With it down the restaurant carries on trading and the
+evening reconciles itself on reconnect.
+
+```
+packages/offline/     the op log, the outbox and the drain loop
+apps/pos/src/offline.ts   wired to the till
+POST /api/outlets/:id/sync   applied in order, inside the outlet's own object
+```
+
+Five properties, each one a specific failure it prevents:
+
+- **The op is on disk before the request leaves.** Pulling the power between the tap and the send
+  loses nothing.
+- **Idempotent by ULID.** `op_log.client_ulid` is UNIQUE, so a tablet that sends a batch, loses the
+  reply and retries bills nobody twice. There is a browser drill that reloads mid-recovery to prove it.
+- **Ordered.** Ops are keyed by a zero-padded sequence, so "serve order X" can never overtake
+  "place order X" and 404. (`op/9` sorting after `op/10` is exactly how that would have happened.)
+- **One bad op cannot block the queue.** Something that can never succeed — an archived table, a
+  deleted dish — is answered `rejected`, dropped, and shown to the cashier. Retrying it forever
+  would wedge every order behind it, which is how an outage becomes a lost evening.
+- **A replayed order keeps the time it was taken**, so last night's takings land on last night.
+  It also bypasses the 86 check, because the food was ordered hours ago and probably eaten —
+  refusing to record it means serving a plate nobody is billed for. **The server decides what counts
+  as a replay, from the op's age**, never a flag the client sets: a rule a client can switch off is
+  not a rule.
+
+Menu edits and stock counts stay server-authoritative — that is the entire conflict model, and it
+is small enough to actually get right.
+
+**Not yet done:** the Capacitor Android shell and native LAN→Bluetooth printing. The engine above
+runs in a plain browser today and the WebView inherits it unchanged, so what is left is the native
+transport and the APK.
 
 ## The daily record
 

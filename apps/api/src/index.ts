@@ -39,7 +39,7 @@ import {
   getPublicOutlet,
   listOutletsForSession,
 } from "./lib/tenant";
-import type { PlaceOrderLine } from "./outlet/OutletDO";
+import type { PlaceOrderLine, SyncOp } from "./outlet/OutletDO";
 
 export { OutletDO } from "./outlet/OutletDO";
 
@@ -786,6 +786,39 @@ app.patch("/api/outlets/:outletId/items/:itemId/availability", async (c) => {
   });
   if (!result.ok) return c.json({ error: "not found" }, 404);
   return c.json(result);
+});
+
+/**
+ * A tablet hands over what it did while the line was down.
+ *
+ * Any staff role — the cashier who traded through the outage is the one
+ * holding the tablet when it reconnects. Goes through the tenant door like
+ * every other outlet route, so a device belonging to another organisation
+ * gets 404 and reaches nothing.
+ */
+app.post("/api/outlets/:outletId/sync", async (c) => {
+  const session = c.get("session");
+  const handle = await getOutletForSession(
+    c.env,
+    session,
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.json<{ ops?: SyncOp[] }>();
+  if (!Array.isArray(body.ops)) {
+    return c.json({ error: "ops (array) required" }, 400);
+  }
+  // A batch is bounded so one tablet returning from a long outage cannot hold
+  // the outlet's single-threaded object for a whole request budget. The
+  // device's outbox already drains in batches; this is the backstop.
+  if (body.ops.length > 200) {
+    return c.json({ error: "too many ops in one batch (max 200)" }, 413);
+  }
+
+  return c.json(
+    await handle.stub.applyOps({ ops: body.ops, userId: session.userId }),
+  );
 });
 
 /* ------------------------------------------------------------------ *

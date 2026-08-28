@@ -11,7 +11,8 @@
   "dependencies": {
     "@suriani/core": "workspace:*",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "@suriani/offline": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.2.18",

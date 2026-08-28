@@ -439,7 +439,10 @@ no change to ordering) · printer driver behind an interface (KDS later) · **LH
 | 2 | Customer QR ordering PWA, multi-tenant routed | Order from a phone lands in the right outlet's DO |
 | 3 | Web POS — floor map, live orders over DO WebSockets | Phone order on the till in under 1s |
 | 4 | Print pipeline — job queue, ESC/POS templates, retry | Real ticket prints in a real kitchen |
-| 5 | **Android POS shell** — local SQLite, op-log sync, **dual-transport printing (LAN → Bluetooth)**; direct APK | **Router unplugged: kitchen still prints over Bluetooth** |
+| 4b | Per-dish requests, printable bill, daily record history | Owner reads yesterday's takings; a customer gets a printed bill |
+| 4c | The real printed menu — 13 sections, 147 dishes, the RM 0.50 rule | A customer orders any dish on the card at the card's price |
+| 5 | **Offline engine** — durable outbox, replay-safe sync | **Line cut mid-service: the till keeps trading and nothing double-bills** |
+| 5b | **Android POS shell** — local SQLite, op-log sync, **dual-transport printing (LAN → Bluetooth)**; direct APK | **Router unplugged: kitchen still prints over Bluetooth** |
 | 5b | **Tablet local web server** — embedded HTTP, customer menu served from the APK, hardened public-only routes, outage QR panel on table cards | **Internet unplugged: a phone on shop WiFi orders and the ticket prints** |
 | 6 | Payments — DuitNow QR, cash, receipts, drawer, shift close | A full bill settles and closes |
 | 7 | Owner console — multi-branch reporting, master menu, Telegram report | Owner reads both branches on her phone |
