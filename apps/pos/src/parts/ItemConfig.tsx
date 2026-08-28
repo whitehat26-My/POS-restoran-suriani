@@ -8,6 +8,14 @@ export interface ConfiguredLine {
   nameMs: string;
   qty: number;
   optionIds: string[];
+  /**
+   * The chosen options in words.
+   *
+   * Carried alongside the ids because the tablet prints the docket itself,
+   * and a slip reading "Mee Kungfu" with no "Kuetiau" under it is the Phase 1
+   * defect this project already fixed once.
+   */
+  optionLabels: string[];
   notes?: string;
   lineSen: number;
 }
@@ -109,6 +117,11 @@ export function ItemConfig({
                 nameMs: item.nameMs,
                 qty,
                 optionIds: chosen,
+                optionLabels: item.modifierGroups.flatMap((g) =>
+                  g.options
+                    .filter((o) => chosen.includes(o.id))
+                    .map((o) => o.labelMs),
+                ),
                 notes: notes.trim() || undefined,
                 lineSen,
               })

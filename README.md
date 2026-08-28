@@ -10,8 +10,11 @@ Two branches of Restoran Suriani are customer zero.
 
 ## Status
 
-**Phase 5 (offline engine) complete.** Cut the till's line and it keeps taking orders; restore it
-and every order lands exactly once. Proven in the browser, not promised.
+**Phase 5 (offline engine) complete, 5b built and awaiting hardware.** Cut the till's line and it
+keeps taking orders; restore it and every order lands exactly once. The tablet now also serves the
+customer menu itself, so a phone on the shop's WiFi can order with the internet unplugged and the
+kitchen docket prints. Proven in a browser against the real router and a real printer; the three
+outage drills on real hardware are what close it out.
 
 | Phase | | |
 |---|---|---|
@@ -24,7 +27,7 @@ and every order lands exactly once. Proven in the browser, not promised.
 | 4b | Per-dish requests, printable bill, daily record history | ✅ |
 | 4c | The real printed menu — 13 sections, 147 dishes, the RM 0.50 rule | ✅ |
 | 5 | Offline engine — op log, outbox, replay-safe sync | ✅ |
-| 5b | Android shell — Capacitor project, native TCP + Bluetooth printing, tablet setup, APK in CI | 🚧 |
+| 5b | Android shell — native printing, tablet setup, the tablet's own web server, APK in CI | 🚧 |
 
 Full plan and roadmap: [`docs/PLAN.md`](docs/PLAN.md).
 
@@ -144,15 +147,21 @@ apps/menu/           customer ordering app (Vite + React), served at /
 apps/pos/            the till and the owner's daily record (Vite + React, dark), at /pos/
                      — both assembled into apps/api/.assets by `pnpm build:web`;
                      each app's e2e/ holds its browser test
-packages/core/       shared money arithmetic, ids and menu labelling — one
-                     implementation for the API, the customer app, and later
-                     the tablet
+packages/core/       shared money arithmetic, ids, menu labelling and the
+                     category→station rule — one implementation for the API,
+                     the customer app and the tablet
 packages/offline/    the till's offline spine: op log, outbox, drain loop
 packages/printer/    LAN→Bluetooth transport choice and the claim/print/ack loop
-apps/pos-android/    the till in a Capacitor shell + the native printer plugin
+packages/localserver/ the tablet's own public route table — menu read and order
+                     create, and deliberately nothing else
+apps/pos-android/    the till in a Capacitor shell, the native printer plugin,
+                     and the HTTP socket the local server listens on
 packages/escpos/     ESC/POS encoder + ticket templates, golden-byte tested
 tools/printer-sim/   a thermal printer that isn't there (TCP :9100)
-tools/print-agent/   claims jobs, prints, acks; reference for Phase 5 Android
+tools/print-agent/   claims jobs, prints, acks; reference for the Android agent
+tools/local-server-harness/
+                     the tablet's web server without the tablet, so a browser
+                     can drive the outage path in CI
 design/              tokens.css, and the Phase 0 prototype kept frozen as the
                      record of the approved look — it is NOT the app
 docs/PLAN.md         product plan, architecture, phasing
@@ -262,10 +271,84 @@ While the till is open the tablet drains its own print queue every three seconds
 about once a minute, so the control plane can tell an unplugged printer from a tablet that has been
 off since Tuesday.
 
+5. **Pesanan tempatan.** Save the tablet's own address so the printed cards can carry the outage QR,
+   and set the guest WiFi name so the card can carry a join code too. See
+   [When the internet dies](#when-the-internet-dies).
+
 **Still to prove on hardware.** The three outage drills in [`docs/PLAN.md`](docs/PLAN.md) — internet,
 router, power — need real printers and are the gate before any branch goes live. Until then the till
-also runs in a browser, where it already trades offline; a browser cannot open a socket to a printer,
-and the Peranti screen says so rather than offering a button that fails silently.
+also runs in a browser, where it already trades offline; a browser cannot open a socket to a printer
+or listen on one, and the Peranti screen says so rather than offering buttons that fail silently.
+
+## When the internet dies
+
+Three different things break in a restaurant and they need three different answers. Lumping them
+together as "offline" is how a POS ends up half-solving all three.
+
+| What actually breaks | What stops working | The answer |
+|---|---|---|
+| **Internet down**, WiFi fine | Cloud sync; phones cannot reach the menu | The tablet serves the menu itself |
+| **Router down**, internet fine | LAN printing | Bluetooth, automatically |
+| **Power cut** | Everything | A UPS on the router, tablet and printers |
+
+The till itself is unaffected by all three — it holds its own outbox and keeps trading.
+
+### The tablet is also a web server
+
+`packages/localserver` is the route table the tablet listens on, and it is **a separate router from
+the POS API, not the same one with a flag**. Four things exist in it: the app shell, the app's own
+files, this table's menu, and place-an-order. There is no staff route to leave switched on by
+mistake, no sales figure to return, no login — not because they are guarded but because they are not
+written. One file is the whole audit, which is the only kind of audit that stays true.
+
+**It is always on, never outage-triggered.** No mode to detect and no switchover to fail at the
+worst possible moment: there are two doors into the menu and both are open all day. That also means
+the local one is exercised on an ordinary Tuesday rather than first thing in a crisis.
+
+An order taken this way is not a special case either. It goes into the **same outbox as a counter
+order**, with the same client ULID, and syncs down the same path — so there is one ordering
+implementation to keep correct, not two.
+
+**What it costs, said plainly.** A tablet cannot hold a TLS certificate that phones will trust for a
+private address, so the local path is plain `http://` and phones show "Not secure". It therefore
+needs its own QR, which is why the table cards grow a *"Tiada internet?"* panel — a WiFi join code
+and a "Pesan di sini" code — once you save the tablet's address on the **Peranti** tab. Give that
+address a **DHCP reservation** on the router: if it moves, every card already printed points
+somewhere wrong.
+
+Bill requests and waiter calls are deliberately not on it. A bell that rings on the till is not
+something to leave reachable from a network customers share, so during an outage the customer is
+told to ask at the counter — which is what they would do anyway.
+
+### The tablet prints its own dockets
+
+Not only during an outage: for any order the tablet takes, counter or phone. It is the print agent
+for its own restaurant, so sending the job to Cloudflare and back only hands it to this same device
+— and doing it directly means the outage path and the everyday path are one path.
+
+The op then tells the server the paper already came out, and the server skips the queue. The flag is
+set **only after the print actually succeeded**: a dead printer leaves it off and the ordinary queue
+takes over with its retries and its red banner, because the fallback of a broken printer must never
+be silence.
+
+### Proving it without a restaurant
+
+`tools/local-server-harness` runs the real router on a real socket, backed by the real seeded menu,
+rendering real ESC/POS to `tools/printer-sim`. `apps/pos/e2e/local-server.mjs` drives a real browser
+against it: no staff route answers, an unknown token and an unknown outlet answer identically, a
+drink cannot be ordered without answering panas-or-ais, an iced takeaway teh tarik is RM 3.00, and
+the docket comes out with the option and the note on it.
+
+What that does **not** prove is the Java that owns the socket and the Capacitor bridge that carries
+a request into the WebView. Both are deliberately thin for that reason, and the three outage drills
+in [`docs/PLAN.md`](docs/PLAN.md) are what actually close the gap.
+
+**One honest limitation:** the router runs in the WebView, so the till app has to be running. The
+foreground service keeps the process and the socket alive across a whole shift — `specialUse`
+rather than `dataSync`, because Android 15 caps `dataSync` at six hours in twenty-four and that cap
+would shut ordering off at the busiest hour of the evening with no error anywhere. But a tablet
+whose app has been swiped away answers 503, and the notification is there so staff can see the door
+is open.
 
 ## The daily record
 

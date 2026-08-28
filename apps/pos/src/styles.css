@@ -310,3 +310,9 @@ button.pill { cursor: pointer; }
 .setup-field { display: block; margin-top: var(--s2); }
 .setup-field span { display: block; font-size: var(--t-xs); color: var(--pos-muted); margin-bottom: 4px; }
 .setup-result { font-size: var(--t-sm); word-break: break-word; }
+
+/* A ticket the tablet took itself and the cloud has not confirmed. Marked
+   because during an outage it is the only record, and because a slip that
+   failed to print must be impossible to mistake for one that did. */
+.ticket.is-local { border-style: dashed; border-color: var(--tarik); }
+.ticket.is-local .ticket-tbl { color: var(--tarik); }

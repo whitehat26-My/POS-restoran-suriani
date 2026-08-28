@@ -24,6 +24,25 @@
 
         </activity>
 
+        <!--
+          The tablet's own web server, so a phone on the shop WiFi can order
+          when the internet is down.
+
+          specialUse rather than dataSync on purpose: Android 15 caps
+          dataSync foreground services at six hours in any twenty-four, and a
+          restaurant's service is longer than that. The cap would shut
+          ordering off at the busiest hour of the evening with no error
+          anywhere for anyone to see.
+        -->
+        <service
+            android:name=".LocalServerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Serves the customer ordering page to phones on the restaurant's own WiFi for the whole of a trading day, so the shop keeps taking orders during an internet outage." />
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -39,6 +58,22 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      The local ordering server.
+
+      A foreground service is the only way Android lets an app hold a
+      listening socket for a ten-hour shift; POST_NOTIFICATIONS is what makes
+      its notification visible on Android 13+, and the notification is how
+      staff can see the outage door is open. ACCESS_WIFI_STATE and WAKE_LOCK
+      are for the WifiLock that stops the radio dozing between orders on a
+      quiet afternoon.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!--
       Printing.

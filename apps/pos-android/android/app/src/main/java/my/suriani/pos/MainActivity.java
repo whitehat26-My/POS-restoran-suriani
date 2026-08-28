@@ -12,6 +12,7 @@ public class MainActivity extends BridgeActivity {
         // App-local plugins are not auto-discovered; the bridge has to be told
         // before it is created.
         registerPlugin(PrinterPlugin.class);
+        registerPlugin(LocalServerPlugin.class);
         super.onCreate(savedInstanceState);
 
         // A till that sleeps mid-service is a till the cashier has to wake and

@@ -57,6 +57,8 @@ const DICT = {
     error_unavailable: "Maaf, ada item yang baru habis. Sila semak menu.",
     required: "Wajib pilih",
     choose_upto: "Pilih hingga",
+    local_banner: "Internet kedai tiada. Anda memesan terus dari kaunter — pesanan tetap sampai ke dapur.",
+    local_counter: "Untuk bil atau bantuan, sila ke kaunter.",
   },
   en: {
     cart_label: "Running total",
@@ -110,6 +112,8 @@ const DICT = {
     error_unavailable: "Sorry, something just sold out. Please check the menu.",
     required: "Required",
     choose_upto: "Choose up to",
+    local_banner: "The shop's internet is down. You're ordering straight from the counter — the kitchen still gets it.",
+    local_counter: "For the bill or any help, please see the counter.",
   },
 } as const;
 

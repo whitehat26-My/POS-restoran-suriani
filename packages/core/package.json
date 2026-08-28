@@ -7,6 +7,7 @@
   "exports": {
     "./money": "./src/money.ts",
     "./ids": "./src/ids.ts",
-    "./menu": "./src/menu.ts"
+    "./menu": "./src/menu.ts",
+    "./stations": "./src/stations.ts"
   }
 }

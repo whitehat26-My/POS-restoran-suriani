@@ -14,7 +14,8 @@
  * addresses, and the till drains the queue on a timer while it is open.
  */
 import { Capacitor, registerPlugin } from "@capacitor/core";
-import { renderTestSlip } from "@suriani/escpos/templates";
+import { groupLinesByStation } from "@suriani/core/stations";
+import { renderKitchenTicket, renderTestSlip } from "@suriani/escpos/templates";
 import {
   printVia,
   runOnce,
@@ -233,4 +234,101 @@ export async function sendHeartbeat(
   } catch {
     /* offline; the next round tries again */
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Printing an order the tablet took itself
+ *
+ * The Worker renders every docket the print queue carries, and that stays
+ * true: layout lives in one tested place so fixing a slip is a deploy rather
+ * than a visit to a restaurant. This is the one exception, and it exists for
+ * a reason the server cannot solve — during an outage the Worker is simply
+ * not reachable, and a kitchen with no paper is a restaurant that has stopped.
+ *
+ * It renders with the same `renderKitchenTicket` and groups by the same
+ * `groupLinesByStation` the Worker uses. A cook cannot tell which machine
+ * produced a slip, so neither can drift from the other.
+ * ------------------------------------------------------------------ */
+
+export interface DocketLine {
+  menuItemId: string;
+  qty: number;
+  name: string;
+  modifiers: string[];
+  notes: string | null;
+}
+
+export interface PrintedDockets {
+  /** True only when every station's slip actually came out. */
+  ok: boolean;
+  printed: number;
+  errors: string[];
+}
+
+export async function printOrderDockets(input: {
+  outletName: string;
+  tableLabel: string;
+  orderCode: string;
+  placedAt: Date;
+  lines: DocketLine[];
+  stations: {
+    stations: {
+      id: string;
+      name: string;
+      target: string;
+      enabled: number;
+      isDefault: number;
+    }[];
+    routes: { stationId: string; categoryId: string }[];
+  };
+  categoryByItem: ReadonlyMap<string, string>;
+  printers?: PrinterMap;
+}): Promise<PrintedDockets> {
+  const printers = input.printers ?? loadPrinters();
+  const report: PrintedDockets = { ok: false, printed: 0, errors: [] };
+
+  const grouped = groupLinesByStation(input.lines, {
+    stations: input.stations.stations,
+    routes: input.stations.routes,
+    categoryByItem: input.categoryByItem,
+    menuItemIdOf: (l) => l.menuItemId,
+  });
+
+  // No stations configured, or no printer set up: say so plainly rather than
+  // reporting success. The caller turns that into "let the server queue it".
+  if (grouped.length === 0) {
+    report.errors.push("no print station configured");
+    return report;
+  }
+
+  for (const { station, lines } of grouped) {
+    const bytes = renderKitchenTicket({
+      outletName: input.outletName,
+      stationName: station.name,
+      tableLabel: input.tableLabel,
+      orderCode: input.orderCode,
+      placedAt: input.placedAt,
+      lines: lines.map((l) => ({
+        qty: l.qty,
+        name: l.name,
+        modifiers: l.modifiers,
+        notes: l.notes,
+      })),
+    });
+
+    try {
+      await printVia(transportsFor(printers, station.target), bytes);
+      report.printed += 1;
+    } catch (err) {
+      report.errors.push(
+        `${station.name}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  // All of them, or none of them counts. A two-station order where only the
+  // drinks slip came out still needs the kitchen's, and the only mechanism
+  // that will produce it is the server's queue.
+  report.ok = report.errors.length === 0 && report.printed === grouped.length;
+  return report;
 }

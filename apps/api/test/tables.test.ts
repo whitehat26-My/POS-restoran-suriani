@@ -386,6 +386,20 @@ describe("printable QR cards", () => {
     expect(html).toContain("Pesan di sini");
   });
 
+  it("points the outage QR at the tablet, on the same path as the cloud one", async () => {
+    // Both QRs are built by one function now. The whole panel is worthless if
+    // the local one encodes a URL the tablet's router does not recognise, and
+    // nobody would find out until an outage — which is the one hour when
+    // nobody has time to debug a QR code.
+    const { orderingUrl } = await import("../src/cards");
+    expect(orderingUrl("http://192.168.1.50:8080", "out_x", "tok_y")).toBe(
+      "http://192.168.1.50:8080/t/out_x/tok_y",
+    );
+    expect(orderingUrl("https://order.suriani.my", "out_x", "tok_y")).toBe(
+      "https://order.suriani.my/t/out_x/tok_y",
+    );
+  });
+
   it("is not something a cashier can pull up", async () => {
     const a = await createTenant("Suriani");
     const res = await SELF.fetch(

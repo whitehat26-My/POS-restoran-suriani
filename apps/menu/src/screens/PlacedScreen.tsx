@@ -16,6 +16,7 @@ export function PlacedScreen({
   onBill,
   onWaiter,
   onMore,
+  local,
 }: {
   t: (k: Key) => string;
   lang: Lang;
@@ -26,6 +27,8 @@ export function PlacedScreen({
   onBill: () => void;
   onWaiter: () => void;
   onMore: () => void;
+  /** Served by the tablet in the shop rather than the cloud. */
+  local: boolean;
 }) {
   const latest = placed[placed.length - 1];
 
@@ -43,6 +46,7 @@ export function PlacedScreen({
           placed={placed}
           stage={stage}
           billRequested={billRequested}
+          local={local}
           waiterCalled={waiterCalled}
           onBill={onBill}
           onWaiter={onWaiter}

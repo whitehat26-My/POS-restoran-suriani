@@ -5,13 +5,14 @@
   "description": "Multi-tenant QR-ordering POS for Malaysian restaurants",
   "scripts": {
     "dev": "pnpm --filter @suriani/api dev",
-    "test": "pnpm --filter @suriani/escpos test && pnpm --filter @suriani/offline test && pnpm --filter @suriani/printer test && pnpm --filter @suriani/api test",
+    "test": "pnpm --filter @suriani/escpos test && pnpm --filter @suriani/offline test && pnpm --filter @suriani/printer test && pnpm --filter @suriani/localserver test && pnpm --filter @suriani/api test",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "pnpm -r --if-present lint",
     "seed": "pnpm --filter @suriani/api seed",
     "deploy": "pnpm --filter @suriani/api deploy",
     "build:web": "pnpm --filter @suriani/menu build && pnpm --filter @suriani/pos build && node scripts/assemble-assets.mjs",
-    "sync:prototype": "node --experimental-strip-types scripts/sync-prototype-menu.mjs"
+    "sync:prototype": "node --experimental-strip-types scripts/sync-prototype-menu.mjs",
+    "harness": "pnpm --filter @suriani/local-server-harness build"
   },
   "engines": {
     "node": ">=20"

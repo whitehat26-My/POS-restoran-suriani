@@ -103,6 +103,7 @@ export function MenuScreen({
           placed={placed}
           stage={stage}
           billRequested={billRequested}
+          local={page.local === true}
           waiterCalled={waiterCalled}
           onBill={onBill}
           onWaiter={onWaiter}

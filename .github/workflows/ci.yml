@@ -53,8 +53,17 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      # ESC/POS golden bytes and the offline engine run in plain node; the API
-      # suite runs inside the real workerd runtime with real D1 and Durable
-      # Objects.
+      # The tablet's own web server, bundled for node so the local ordering
+      # path can be driven by a real browser. Building it here is also the
+      # only compile check the harness gets, and it imports the same router,
+      # the same station grouping and the same docket templates the tablet
+      # runs — so a change that breaks the outage path fails here rather than
+      # in a restaurant.
+      - name: Build the local-server harness
+        run: pnpm harness
+
+      # ESC/POS golden bytes, the offline engine and the local server run in
+      # plain node; the API suite runs inside the real workerd runtime with
+      # real D1 and Durable Objects.
       - name: Test
         run: pnpm test

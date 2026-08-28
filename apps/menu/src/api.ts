@@ -44,6 +44,16 @@ export interface TablePage {
   outlet: { name: string };
   table: { label: string };
   menu: { categories: MenuCategory[]; items: MenuItem[] };
+  /**
+   * Served by the tablet in the restaurant rather than by the cloud.
+   *
+   * That server carries menu-read and order-create and nothing else — a bell
+   * that rings on the till is not something to leave reachable from a network
+   * customers share. So the two buttons that ring it are replaced with a line
+   * telling the customer to ask at the counter, which is what they would do
+   * anyway, rather than left there to do nothing when pressed.
+   */
+  local?: boolean;
 }
 
 export interface PlacedOrder {

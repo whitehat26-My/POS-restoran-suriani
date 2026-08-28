@@ -67,6 +67,14 @@ export interface OfflineTill {
   /** Drain now — the line came back, or the cashier tapped retry. */
   nudge(): void;
   pending(): Promise<number>;
+  /**
+   * The client ULIDs still waiting to sync.
+   *
+   * The local server uses this to know when one of its orders has been
+   * confirmed, so it can stop showing its own copy and let the server's
+   * ticket take over.
+   */
+  queuedUlids(): Promise<string[]>;
   durable: boolean;
   stop(): void;
 }
@@ -117,6 +125,7 @@ export function openOfflineTill(
     },
     nudge: () => syncer.nudge(),
     pending: () => outbox.size(),
+    queuedUlids: async () => (await outbox.all()).map((q) => q.op.clientUlid),
     durable,
     stop() {
       syncer.stop();

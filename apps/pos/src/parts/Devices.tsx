@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { api, type Station } from "../api";
+import { api, type OutletSettings, type Station } from "../api";
 import { apiBase, setApiBase } from "../base";
 import {
   askBluetoothPermission,
@@ -30,10 +30,13 @@ import {
 export function Devices({
   outletId,
   outletName,
+  localUrl,
   onSay,
 }: {
   outletId: string;
   outletName: string;
+  /** Where this tablet is listening, once its own server is up. */
+  localUrl: string | null;
   onSay: (msg: string) => void;
 }) {
   const [stations, setStations] = useState<Station[]>([]);
@@ -43,12 +46,14 @@ export function Devices({
   const [freshToken, setFreshToken] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [result, setResult] = useState<Record<string, string>>({});
+  const [settings, setSettings] = useState<OutletSettings | null>(null);
 
   useEffect(() => {
     api
       .stations(outletId)
       .then((r) => setStations(r.stations.filter((s) => s.enabled === 1)))
       .catch(() => onSay("Tidak dapat membaca senarai stesen"));
+    api.settings(outletId).then(setSettings).catch(() => {});
   }, [outletId, onSay]);
 
   // Printers are addressed by target, not by station: two stations pointed at
@@ -98,6 +103,37 @@ export function Devices({
       setPaired((await listPairedPrinters()).devices);
     } catch {
       onSay("Bluetooth tidak tersedia pada peranti ini");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const saveLocalUrl = async () => {
+    if (!localUrl) return;
+    setBusy("local");
+    try {
+      setSettings(await api.saveSettings(outletId, { localOrderUrl: localUrl }));
+      onSay("Alamat disimpan — cetak semula kad meja");
+    } catch {
+      onSay("Gagal menyimpan alamat");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const saveWifi = async () => {
+    setBusy("wifi");
+    try {
+      setSettings(
+        await api.saveSettings(outletId, {
+          wifiSsid: settings?.wifiSsid?.trim() || null,
+          // An open guest network is a blank password, not the string "null".
+          wifiPassword: settings?.wifiPassword?.trim() || null,
+        }),
+      );
+      onSay("WiFi disimpan");
+    } catch {
+      onSay("Gagal menyimpan WiFi");
     } finally {
       setBusy(null);
     }
@@ -275,6 +311,87 @@ export function Devices({
             </div>
           </div>
         ))}
+      </section>
+
+      <section className="setup-card">
+        <h2>Pesanan tempatan</h2>
+        <p className="setup-help">
+          Tablet ini juga melayan menu kepada telefon pelanggan melalui WiFi
+          kedai. Ia sentiasa terbuka — bukan hanya semasa internet mati — jadi
+          ia sudah diuji setiap hari sebelum hari ia benar-benar diperlukan.
+        </p>
+
+        <div className="setup-row">
+          <code className="setup-mono">
+            {localUrl ?? (isTablet() ? "Belum bersambung ke WiFi" : "Hanya pada tablet")}
+          </code>
+          {localUrl && (
+            <button
+              className="mini mini-go"
+              disabled={busy === "local"}
+              onClick={() => void saveLocalUrl()}
+            >
+              Simpan untuk kad meja
+            </button>
+          )}
+        </div>
+
+        {settings?.localOrderUrl && (
+          <p className="setup-help">
+            Kad meja akan mencetak panel “Tiada internet?” yang menghala ke{" "}
+            <strong>{settings.localOrderUrl}</strong>.
+          </p>
+        )}
+
+        <p className="setup-help">
+          Tetapkan alamat IP tablet ini sebagai <em>DHCP reservation</em> pada
+          router. Jika alamatnya berubah, setiap kad meja yang sudah dicetak
+          akan menghala ke tempat yang salah.
+        </p>
+
+        <label className="setup-field">
+          <span>Nama WiFi tetamu (SSID)</span>
+          <input
+            className="field"
+            placeholder="Suriani-Guest"
+            autoCapitalize="off"
+            value={settings?.wifiSsid ?? ""}
+            onChange={(e) =>
+              setSettings((prev) => ({
+                wifiSsid: e.target.value,
+                wifiPassword: prev?.wifiPassword ?? null,
+                localOrderUrl: prev?.localOrderUrl ?? null,
+              }))
+            }
+          />
+        </label>
+        <label className="setup-field">
+          <span>Kata laluan WiFi (kosongkan jika terbuka)</span>
+          <input
+            className="field"
+            autoCapitalize="off"
+            value={settings?.wifiPassword ?? ""}
+            onChange={(e) =>
+              setSettings((prev) => ({
+                wifiSsid: prev?.wifiSsid ?? null,
+                wifiPassword: e.target.value,
+                localOrderUrl: prev?.localOrderUrl ?? null,
+              }))
+            }
+          />
+        </label>
+        <div className="setup-row">
+          <button
+            className="mini"
+            disabled={busy === "wifi"}
+            onClick={() => void saveWifi()}
+          >
+            {busy === "wifi" ? "Menyimpan…" : "Simpan WiFi"}
+          </button>
+          <span className="setup-help grow" style={{ margin: 0 }}>
+            Dicetak sebagai kod QR “Sambung WiFi” pada setiap kad meja.
+          </span>
+        </div>
       </section>
     </div>
   );

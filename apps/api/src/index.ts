@@ -962,7 +962,13 @@ app.get("/api/outlets/:outletId/print/stations", async (c) => {
     c.req.param("outletId"),
   );
   if (!handle) return c.json({ error: "not found" }, 404);
-  return c.json({ stations: await handle.stub.listStations() });
+  // The routes come with the stations because the tablet caches both: with
+  // the line down it has to decide which docket goes where by itself, and it
+  // cannot ask.
+  return c.json({
+    stations: await handle.stub.listStations(),
+    routes: await handle.stub.listStationRoutes(),
+  });
 });
 
 /** Re-queue a docket. Any staff role: it is the cashier who sees paper jam. */

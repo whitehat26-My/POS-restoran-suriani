@@ -49,6 +49,23 @@ export interface Station {
   sortOrder: number;
 }
 
+export interface OutletSettings {
+  wifiSsid: string | null;
+  wifiPassword: string | null;
+  /**
+   * Where the tablet listens, e.g. "http://192.168.1.50:8080".
+   *
+   * Until this is set the printed table cards leave the "Tiada internet?"
+   * panel off entirely — a QR pointing nowhere is worse than no QR.
+   */
+  localOrderUrl: string | null;
+}
+
+export interface StationRoute {
+  stationId: string;
+  categoryId: string;
+}
+
 export interface Zone {
   id: string;
   nameMs: string;
@@ -215,9 +232,31 @@ export const api = {
       method: "POST",
     }).then(json<{ ok: boolean }>),
 
+  settings: (outletId: string) =>
+    authedFetch(`/api/outlets/${outletId}/settings`).then(json<OutletSettings>),
+
+  saveSettings: (outletId: string, patch: Partial<OutletSettings>) =>
+    authedFetch(`/api/outlets/${outletId}/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then(json<OutletSettings>),
+
   stations: (outletId: string) =>
     authedFetch(`/api/outlets/${outletId}/print/stations`).then(
-      json<{ stations: Station[] }>,
+      json<{ stations: Station[]; routes: StationRoute[] }>,
+    ),
+
+  /**
+   * Every table with its QR token.
+   *
+   * The tablet caches these so its own web server can resolve the token in a
+   * customer's URL with the line down. Readable by any staff session, which
+   * is right: a cashier can already place an order against any table.
+   */
+  tables: (outletId: string) =>
+    authedFetch(`/api/outlets/${outletId}/tables`).then(
+      json<{ tables: { id: string; label: string; qrToken: string }[] }>,
     ),
 
   /**

@@ -16,7 +16,15 @@ import {
 } from "../api";
 import { openLive, type LiveState } from "../live";
 import { openOfflineTill, type OfflineTill } from "../offline";
-import { isTablet, loadAgent, printPendingJobs, sendHeartbeat } from "../print";
+import { openLocalServer, type LocalOrderRecord, type LocalServer } from "../local";
+import { startLocalServer, type RunningServer } from "../localbridge";
+import {
+  isTablet,
+  loadAgent,
+  printOrderDockets,
+  printPendingJobs,
+  sendHeartbeat,
+} from "../print";
 import { BillSheet } from "./BillSheet";
 import { Devices } from "./Devices";
 import { ItemConfig, type ConfiguredLine } from "./ItemConfig";
@@ -50,6 +58,13 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
   const [pendingOps, setPendingOps] = useState(0);
   const [queueStuck, setQueueStuck] = useState(false);
   const offline = useRef<OfflineTill | null>(null);
+  const local = useRef<LocalServer | null>(null);
+  // Orders taken on customers' phones through the tablet's own server, which
+  // the till has not yet seen come back from the cloud. During an outage this
+  // is the only place they appear, and a cashier who cannot see what the
+  // kitchen is cooking is a cashier who cannot run the floor.
+  const [localOrders, setLocalOrders] = useState<LocalOrderRecord[]>([]);
+  const [localUrl, setLocalUrl] = useState<string | null>(null);
   const toastTimer = useRef<number>(undefined);
 
   const say = useCallback((msg: string) => {
@@ -135,6 +150,50 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
     // The agent credential is per device, not per outlet: restarting the loop
     // on an outlet switch would achieve nothing.
   }, []);
+
+  // The tablet's own web server, and the cache that makes it possible.
+  //
+  // Opened in a browser too, deliberately. Nothing listens on a socket there,
+  // but the cache refresh and the ordering path are the same code, so the
+  // parts that decide what a customer can do are exercised on every dev run
+  // rather than only inside an APK.
+  useEffect(() => {
+    const till = offline.current;
+    if (!till) return;
+    const server = openLocalServer(outlet, till, (records, added) => {
+      setLocalOrders([...records].reverse());
+      if (added) say(`📱 ${added.tableLabel} pesan dari telefon`);
+    });
+    local.current = server;
+
+    // Listen, if there is a socket to listen on.
+    //
+    // Always, never only during an outage. There is no mode to detect and no
+    // switchover to fail at the worst possible moment — there are simply two
+    // doors into the menu and both are open all day, which also means the
+    // local one is exercised every day rather than first thing in a crisis.
+    let listening: RunningServer | null = null;
+    if (isTablet()) {
+      startLocalServer(server.handle).then(
+        (running) => {
+          listening = running;
+          setLocalUrl(running.url);
+        },
+        () => {
+          // Not on WiFi, or the service was refused. The till is unaffected;
+          // only the outage door failed to open, and the Peranti tab says so.
+          setLocalUrl(null);
+        },
+      );
+    }
+
+    return () => {
+      void listening?.stop();
+      server.stop();
+      local.current = null;
+    };
+    // outlet.id is what identifies the cache; the name only labels a docket.
+  }, [outlet, say]);
 
   // Feed + menu load on outlet switch; floor arrives with the WS snapshot.
   useEffect(() => {
@@ -335,6 +394,37 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
     const till = offline.current;
     if (!till) return;
 
+    const table = tables.find((t) => t.id === tableId);
+    const snapshot = local.current?.cache();
+
+    // The tablet prints its own dockets, whether or not the line is up.
+    //
+    // It is the print agent for this restaurant, so routing an order it took
+    // itself through the cloud only hands the job back to this device. Doing
+    // it directly is faster, and — the reason it matters — it is the same
+    // path during an outage, so it is exercised every day rather than only in
+    // the emergency it exists for. In a browser there is no printer to reach,
+    // this reports failure, and the server queues the docket exactly as it
+    // always has.
+    let printed = { ok: false };
+    if (table && snapshot) {
+      printed = await printOrderDockets({
+        outletName: outlet.name,
+        tableLabel: table.label,
+        orderCode: `#${Date.now().toString(36).slice(-5).toUpperCase()}`,
+        placedAt: new Date(),
+        lines: cart.map((l) => ({
+          menuItemId: l.menuItemId,
+          qty: l.qty,
+          name: l.nameMs,
+          modifiers: l.optionLabels,
+          notes: l.notes ?? null,
+        })),
+        stations: local.current!.stations(),
+        categoryByItem: new Map(snapshot.items.map((i) => [i.id, i.categoryId])),
+      });
+    }
+
     await till.perform({
       kind: "order.place",
       tableId,
@@ -345,12 +435,13 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
         modifierOptionIds: l.optionIds.length ? l.optionIds : undefined,
       })),
       expectedTotalSen: cartTotal,
+      printedLocally: printed.ok,
     });
     setCart([]);
     setPendingOps(await till.pending());
     // The order exists on this tablet either way. It reaches the kitchen now
     // if the line is up, and the moment it returns if it is not.
-    say("Pesanan kaunter direkod");
+    say(printed.ok ? "Pesanan kaunter dicetak" : "Pesanan kaunter direkod");
   };
 
   const toggle86 = async (item: MenuItem) => {
@@ -491,7 +582,12 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
       {view === "records" ? (
         <Records outletId={outletId} outletName={outlet.name} onSay={say} />
       ) : view === "devices" ? (
-        <Devices outletId={outletId} outletName={outlet.name} onSay={say} />
+        <Devices
+          outletId={outletId}
+          outletName={outlet.name}
+          localUrl={localUrl}
+          onSay={say}
+        />
       ) : (
       <div className="body">
         <section className="col">
@@ -526,7 +622,53 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
         <section className="col">
           <div className="col-head">Pesanan masuk</div>
           <div className="col-scroll" data-testid="feed">
-            {pending.length === 0 && <p className="empty">Tiada pesanan menunggu.</p>}
+            {pending.length === 0 && localOrders.length === 0 && (
+              <p className="empty">Tiada pesanan menunggu.</p>
+            )}
+
+            {/* Orders taken on a customer's phone through this tablet, before
+                the server has confirmed them. During an outage they exist
+                nowhere else, and a cashier who cannot see what the kitchen is
+                cooking cannot run the floor. They disappear on their own once
+                the op syncs and the server's real ticket takes over. */}
+            {localOrders.map((r) => (
+              <article className="ticket is-local" key={r.clientUlid}>
+                <div className="ticket-head">
+                  <span className="ticket-tbl">
+                    {r.tableLabel} · telefon
+                    {r.printed ? "" : " · TIDAK BERCETAK"}
+                  </span>
+                  <span className="ticket-time">
+                    {new Date(r.placedAt).toLocaleTimeString("ms-MY", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+                <div className="ticket-lines">
+                  {r.lines.map((l, i) => (
+                    <div className="ticket-line" key={i}>
+                      <span className="ticket-qty">{l.qty}×</span>
+                      <span>
+                        {l.name}
+                        {(l.modifiers.length > 0 || l.notes) && (
+                          <span className="ticket-note">
+                            {" "}
+                            {[...l.modifiers, l.notes].filter(Boolean).join(" · ")}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="ticket-acts">
+                  <span className="ticket-note">
+                    Menunggu talian · {formatMYR(r.totalSen)}
+                  </span>
+                </div>
+              </article>
+            ))}
+
             {pending.map((t) => (
               <article className="ticket" data-status={t.status} key={t.id}>
                 <div className="ticket-head">

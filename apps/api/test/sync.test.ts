@@ -273,6 +273,68 @@ describe("replaying an op log", () => {
   });
 });
 
+describe("the tablet printing its own dockets", () => {
+  const jobsOf = async (t: Tenant) =>
+    (
+      (await (
+        await SELF.fetch(
+          `https://api.test/api/outlets/${t.outletId}/print/health`,
+          { headers: auth(t) },
+        )
+      ).json()) as { queued: number; recent: unknown[] }
+    );
+
+  it("does not queue a second docket for an order the tablet already printed", async () => {
+    const { t } = await outlet("Suriani DoublePrint");
+
+    await sync(t, [
+      placeOp({
+        body: {
+          kind: "order.place",
+          tableId: "tbl_sync",
+          lines: [{ menuItemId: "itm_ng_kampung", qty: 1 }],
+          expectedTotalSen: 800,
+          printedLocally: true,
+        },
+      }),
+    ]);
+
+    // Paper already came out of the tablet's own printer. A queued job here
+    // is the same food cooked twice.
+    expect((await jobsOf(t)).recent).toHaveLength(0);
+    expect(await ordersOf(t)).toHaveLength(1);
+  });
+
+  it("queues the docket as always when the tablet's printer failed", async () => {
+    const { t } = await outlet("Suriani PrintFailed");
+
+    await sync(t, [
+      placeOp({
+        body: {
+          kind: "order.place",
+          tableId: "tbl_sync",
+          lines: [{ menuItemId: "itm_ng_kampung", qty: 1 }],
+          expectedTotalSen: 800,
+          printedLocally: false,
+        },
+      }),
+    ]);
+
+    // This is the half that matters most. A tablet whose printer is dead
+    // leaves the flag off, and the ordinary queue — with its retries and its
+    // red banner — takes over. The fallback of a broken printer is never
+    // silence.
+    expect((await jobsOf(t)).recent.length).toBeGreaterThan(0);
+  });
+
+  it("queues the docket for an op that never mentions printing", async () => {
+    // Every op written before this field existed, and every browser till.
+    const { t } = await outlet("Suriani NoFlag");
+    await sync(t, [placeOp()]);
+    expect((await jobsOf(t)).recent.length).toBeGreaterThan(0);
+  });
+});
+
 describe("sync is a tenant door like every other outlet route", () => {
   it("answers 404 to another organisation", async () => {
     const { t } = await outlet("Suriani A");

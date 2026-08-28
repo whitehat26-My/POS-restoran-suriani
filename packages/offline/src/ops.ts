@@ -36,6 +36,22 @@ export type OpBody =
        * a month later.
        */
       expectedTotalSen: Sen;
+      /**
+       * Paper already came out of a printer in this restaurant.
+       *
+       * The tablet prints the dockets for orders it takes itself — counter
+       * orders and orders from its own local server alike — because it is the
+       * print agent anyway, so a round trip to the cloud and back to this same
+       * device is latency with nothing to show for it. It also means the path
+       * is identical whether the line is up or down, and a path that only runs
+       * during an emergency is a path nobody has tested.
+       *
+       * Set only after `printVia` actually succeeded. A failed print leaves it
+       * false, the server queues the docket as it always has, and the existing
+       * retry and red banner take over — a printer that is down must never be
+       * turned into a docket nobody ever sees.
+       */
+      printedLocally?: boolean;
     }
   | { kind: "order.serve"; orderId: string }
   | { kind: "session.close"; sessionId: string }

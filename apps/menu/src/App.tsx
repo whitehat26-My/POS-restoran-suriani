@@ -290,7 +290,16 @@ export function App() {
         </div>
       </header>
 
-      {offline && <div className="offline-note">{t("offline_note")}</div>}
+      {/* Two different situations, two different sentences. "offline" means
+          this phone lost signal; "local" means the shop's line is down and
+          the tablet on the counter is serving this page. Merging them would
+          tell half the customers something untrue. */}
+      {page.local === true && (
+        <div className="offline-note">{t("local_banner")}</div>
+      )}
+      {offline && !page.local && (
+        <div className="offline-note">{t("offline_note")}</div>
+      )}
       {error && <div className="error-note" role="alert">{t(error)}</div>}
 
       {view === "menu" && (
@@ -328,6 +337,7 @@ export function App() {
           stage={stage}
           billRequested={billRequested}
           waiterCalled={waiterCalled}
+          local={page.local === true}
           onBill={doBill}
           onWaiter={doWaiter}
           onMore={() => setView("menu")}

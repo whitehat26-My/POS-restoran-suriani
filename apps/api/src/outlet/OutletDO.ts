@@ -25,6 +25,7 @@ import { runMigrations } from "./migrations";
 import { id, qrToken, ulid } from "../lib/ids";
 import { batchForSql } from "../lib/chunk";
 import { lineTotalSen, type Modifier, type Sen } from "../lib/money";
+import { groupLinesByStation } from "@suriani/core/stations";
 import {
   renderKitchenTicket,
   renderReceipt,
@@ -133,6 +134,8 @@ export interface SyncOp {
         tableId: string;
         lines: PlaceOrderLine[];
         expectedTotalSen?: Sen;
+        /** Paper already came out of this device's own printer. */
+        printedLocally?: boolean;
       }
     | { kind: "order.serve"; orderId: string }
     | { kind: "session.close"; sessionId: string }
@@ -178,6 +181,19 @@ export interface PlaceOrderInput {
    * during the outage — lands in the audit log instead of in the accounts.
    */
   expectedTotalSen?: Sen;
+  /**
+   * The tablet already printed this order's dockets itself.
+   *
+   * Only reachable through the staff-authed sync route, and only ever set by
+   * a device that watched `printVia` succeed. When it is set, the fan-out
+   * below is skipped — otherwise the kitchen gets the same order twice, once
+   * from the tablet's own printer and once from the queue.
+   *
+   * A failed print leaves it unset and this path is unchanged, which is the
+   * property that matters: the fallback of a broken printer is the ordinary
+   * queue, never silence.
+   */
+  printedLocally?: boolean;
 }
 
 export interface PlacedOrder {
@@ -1406,20 +1422,31 @@ export class OutletDO extends DurableObject<Env> {
     // their menu category routes to, so a mixed order becomes one docket for
     // the kitchen and one for the drinks counter — each carrying only its own
     // lines, with modifiers and notes intact.
-    await this.queuePrintJobs({
-      orderId,
-      tableLabel: table.label,
-      placedAt: now,
-      lines: itemRows.map((r) => ({
-        menuItemId: r.menuItemId,
-        qty: r.qty,
-        name: r.nameMs,
-        modifiers: (JSON.parse(r.modifiers ?? "[]") as Modifier[]).map(
-          (m) => m.label,
-        ),
-        notes: r.notes ?? null,
-      })),
-    });
+    //
+    // Unless the tablet already did it. It is the print agent for its own
+    // restaurant, so for an order it took itself the queue would only hand the
+    // job back to the device it came from.
+    if (input.printedLocally === true) {
+      await this.audit(
+        "order.printed_by_device",
+        JSON.stringify({ orderId, deviceId: input.deviceId ?? null }),
+      );
+    } else {
+      await this.queuePrintJobs({
+        orderId,
+        tableLabel: table.label,
+        placedAt: now,
+        lines: itemRows.map((r) => ({
+          menuItemId: r.menuItemId,
+          qty: r.qty,
+          name: r.nameMs,
+          modifiers: (JSON.parse(r.modifiers ?? "[]") as Modifier[]).map(
+            (m) => m.label,
+          ),
+          notes: r.notes ?? null,
+        })),
+      });
+    }
 
     await this.db
       .update(schema.tables)
@@ -1571,18 +1598,10 @@ export class OutletDO extends DurableObject<Env> {
     }[];
     reprint?: boolean;
   }): Promise<string[]> {
-    const stations = (await this.listStations()).filter((s) => s.enabled === 1);
-    if (stations.length === 0) return [];
-
-    const fallback =
-      stations.find((s) => s.isDefault === 1) ??
-      stations.find((s) => s.target === "kitchen") ??
-      stations[0]!;
+    const stations = await this.listStations();
+    if (stations.filter((s) => s.enabled === 1).length === 0) return [];
 
     const routes = await this.db.select().from(schema.stationRoutes);
-    const stationByCategory = new Map(
-      routes.map((r) => [r.categoryId, r.stationId]),
-    );
 
     const menuIds = input.lines.map((l) => l.menuItemId);
     const menuRows = menuIds.length
@@ -1593,20 +1612,18 @@ export class OutletDO extends DurableObject<Env> {
       : [];
     const categoryByItem = new Map(menuRows.map((m) => [m.id, m.categoryId]));
 
-    const grouped = new Map<string, typeof input.lines>();
-    for (const line of input.lines) {
-      const categoryId = categoryByItem.get(line.menuItemId);
-      const stationId =
-        (categoryId ? stationByCategory.get(categoryId) : undefined) ??
-        fallback.id;
-      const list = grouped.get(stationId) ?? [];
-      list.push(line);
-      grouped.set(stationId, list);
-    }
+    // The grouping rule itself lives in @suriani/core, because the tablet
+    // applies it too when it prints a docket with the line down. A cook
+    // cannot tell which machine produced a slip, so the two must not drift.
+    const grouped = groupLinesByStation(input.lines, {
+      stations,
+      routes,
+      categoryByItem,
+      menuItemIdOf: (l) => l.menuItemId,
+    });
 
     const created: string[] = [];
-    for (const [stationId, lines] of grouped) {
-      const station = stations.find((s) => s.id === stationId) ?? fallback;
+    for (const { station, lines } of grouped) {
       const jobId = id("pj");
       await this.db.insert(schema.printJobs).values({
         id: jobId,
@@ -2370,6 +2387,11 @@ export class OutletDO extends DurableObject<Env> {
           // sales to yesterday.
           placedAt: replay ? op.at : undefined,
           expectedTotalSen: body.expectedTotalSen,
+          // Not a rule the device is talking its way out of — it is reporting
+          // a physical fact the server has no other way to learn: paper came
+          // out of a printer in that restaurant. The device only sets it after
+          // the print actually succeeded, so a failure falls back to the queue.
+          printedLocally: body.printedLocally === true,
         });
         if (!placed.ok) {
           // unknown_table and unknown_item can never come good; the dish or

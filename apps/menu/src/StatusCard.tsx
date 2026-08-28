@@ -15,6 +15,7 @@ export function StatusCard({
   waiterCalled,
   onBill,
   onWaiter,
+  local = false,
 }: {
   t: (k: Key) => string;
   placed: PlacedSummary[];
@@ -24,6 +25,8 @@ export function StatusCard({
   waiterCalled: boolean;
   onBill: () => void;
   onWaiter: () => void;
+  /** Served by the tablet, which does not carry the two buttons below. */
+  local?: boolean;
 }) {
   const latest = placed[placed.length - 1];
   if (!latest) return null;
@@ -65,6 +68,10 @@ export function StatusCard({
         </div>
       </div>
       <div className="status-acts">
+        {local ? (
+          <p className="status-note">{t("local_counter")}</p>
+        ) : (
+          <>
         {billRequested ? (
           <p className="status-note">{t("bill_requested")}</p>
         ) : (
@@ -78,6 +85,8 @@ export function StatusCard({
           <button className="btn-card btn-card-ghost" onClick={onWaiter}>
             {t("call_waiter")}
           </button>
+        )}
+          </>
         )}
       </div>
     </div>

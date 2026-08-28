@@ -78,7 +78,7 @@ export function renderCards(opts: CardOptions): string {
                      : ""
                  }
                  <figure>
-                   ${qrSvg(`${opts.localOrderUrl}/t/${opts.outletId}/${table.qrToken}`, 2)}
+                   ${qrSvg(orderingUrl(opts.localOrderUrl, opts.outletId, table.qrToken), 2)}
                    <figcaption>${opts.wifiSsid ? "2. " : ""}Pesan di sini</figcaption>
                  </figure>
                </div>

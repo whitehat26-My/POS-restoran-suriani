@@ -8,6 +8,9 @@ android/app/build/
 android/local.properties
 android/.idea/
 android/app/src/main/assets/public/
+# The customer ordering app, built into the APK so the tablet can serve it
+# to phones on the shop WiFi when the internet is down.
+android/app/src/main/assets/menu/
 android/app/src/main/assets/capacitor.config.json
 android/app/src/main/assets/capacitor.plugins.json
 android/capacitor-cordova-android-plugins/

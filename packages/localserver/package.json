@@ -1,0 +1,21 @@
+{
+  "name": "@suriani/localserver",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The tablet's own web server, for the hours when the restaurant has no internet. A separate route table from the POS API — not the same one with a flag — because it listens on a network customers share.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@suriani/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}
