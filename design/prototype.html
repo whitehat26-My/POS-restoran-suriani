@@ -259,6 +259,14 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
   border-bottom: 1px solid var(--line);
 }
 .cat-rail::-webkit-scrollbar { display: none; }
+/* Fourteen sections do not fit on a phone, and a hidden scrollbar gives no
+   sign that more exists. The edge fades appear only on the side that has
+   more to show. */
+.cat-rail.more-right { mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+.cat-rail.more-left  { mask-image: linear-gradient(to right, transparent, #000 40px); }
+.cat-rail.more-left.more-right {
+  mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+}
 .cat-rail button {
   flex: none; padding: 7px 14px; border-radius: var(--r-full);
   font-size: var(--t-sm); font-weight: 600; white-space: nowrap;
@@ -680,7 +688,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
           <div class="cust-top-row">
             <div>
               <div class="cust-shop">Restoran Suriani</div>
-              <div class="cust-table">Kampung Baru · <span class="num">MEJA 05</span></div>
+              <div class="cust-table">Jalan Imbi · <span class="num">MEJA 05</span></div>
             </div>
             <div class="lang-swap" role="group" aria-label="Language">
               <button id="clang-ms" aria-pressed="true">BM</button>
@@ -730,7 +738,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
           <div class="pos-bar">
             <div class="pos-title">
               Suriani POS
-              <small>Kampung Baru · <span data-i18n="shift">Syif petang</span> · Aina</small>
+              <small>Jalan Imbi · <span data-i18n="shift">Syif petang</span> · Aina</small>
             </div>
             <div class="pos-health">
               <span class="pill"><span class="dot dot-ok"></span><span data-i18n="online">Dalam talian</span></span>
@@ -788,11 +796,11 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
             <div class="card">
               <div class="card-label" data-i18n="branches">Dua cawangan</div>
               <div class="branch">
-                <div class="branch-name">Kampung Baru<small><span class="num" id="kbOrders">142</span> <span data-i18n="orders">pesanan</span></small></div>
+                <div class="branch-name">Jalan Imbi (HQ)<small><span class="num" id="kbOrders">142</span> <span data-i18n="orders">pesanan</span></small></div>
                 <div class="branch-val num" id="kbVal">RM 1,932.00</div>
               </div>
               <div class="branch">
-                <div class="branch-name">Bangi<small><span class="num">98</span> <span data-i18n="orders">pesanan</span></small></div>
+                <div class="branch-name">Hotel Leo<small><span class="num">98</span> <span data-i18n="orders">pesanan</span></small></div>
                 <div class="branch-val num">RM 1,352.50</div>
               </div>
             </div>
@@ -811,7 +819,7 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
             <div class="alert">
               <div class="alert-bar"></div>
               <div>
-                <b data-i18n="a_title">Nasi Lemak Ayam Goreng habis di Kampung Baru</b>
+                <b data-i18n="a_title">Nasi Lemak Ayam Goreng habis di Jalan Imbi</b>
                 <span data-i18n="a_body">Sudah disembunyikan dari semua meja pada 2:14 ptg.</span>
               </div>
             </div>
@@ -879,7 +887,7 @@ const I18N = {
     greet: "Selamat petang, Puan Suriani", vs: "berbanding Isnin lepas",
     branches: "Dua cawangan", orders: "pesanan",
     byhour: "Jualan mengikut jam", top: "Paling laris hari ini",
-    a_title: "Nasi Lemak Ayam Goreng habis di Kampung Baru",
+    a_title: "Nasi Lemak Ayam Goreng habis di Jalan Imbi",
     a_body: "Sudah disembunyikan dari semua meja pada 2:14 ptg.",
     hint: "Cuba tambah pesanan di skrin Pelanggan, kemudian tukar ke Kaunter — pesanan itu muncul dan tiket dapur tercetak.",
     n1t: "Satu sistem token",
@@ -922,7 +930,7 @@ const I18N = {
     greet: "Good evening, Puan Suriani", vs: "vs last Monday",
     branches: "Two branches", orders: "orders",
     byhour: "Sales by hour", top: "Best sellers today",
-    a_title: "Nasi Lemak Ayam Goreng sold out at Kampung Baru",
+    a_title: "Nasi Lemak Ayam Goreng sold out at Jalan Imbi",
     a_body: "Hidden from every table at 2:14 pm.",
     hint: "Add something on the Customer screen, then switch to Counter — the order appears and a kitchen ticket prints.",
     n1t: "One token system",
@@ -1052,7 +1060,7 @@ const MENU = [
   { id: "itm_set_ayampaprik", cat: "cat_setnasi", art: "nasigoreng", sen: 1100, prep: 15, ms: "Set Nasi Putih Ayam Paprik", en: "White Rice Set, Chicken Paprik", tags: ["hot"] },
   { id: "itm_set_seafoodpaprik", cat: "cat_setnasi", art: "nasigoreng", sen: 1300, prep: 15, ms: "Set Nasi Putih Seafood Paprik", en: "White Rice Set, Seafood Paprik", tags: ["hot"] },
   { id: "itm_set_paprikcampur", cat: "cat_setnasi", art: "nasigoreng", sen: 1300, prep: 15, ms: "Set Nasi Putih Paprik Campur", en: "White Rice Set, Mixed Paprik", tags: ["hot"] },
-  { id: "itm_set_dagingkuhit", cat: "cat_setnasi", art: "nasigoreng", sen: 1000, prep: 15, ms: "Set Nasi Putih Daging Goreng Ku Hit", en: "White Rice Set, Beef Ku Hit", tags: [] },
+  { id: "itm_set_dagingkunyit", cat: "cat_setnasi", art: "nasigoreng", sen: 1000, prep: 15, ms: "Set Nasi Putih Daging Goreng Kunyit", en: "White Rice Set, Turmeric Beef", tags: [] },
   { id: "itm_set_tomyamayam", cat: "cat_setnasi", art: "nasigoreng", sen: 1100, prep: 15, ms: "Set Nasi Putih Tomyam Ayam", en: "White Rice Set, Chicken Tomyam", tags: ["hot"] },
   { id: "itm_set_tomyamdaging", cat: "cat_setnasi", art: "nasigoreng", sen: 1200, prep: 15, ms: "Set Nasi Putih Tomyam Daging", en: "White Rice Set, Beef Tomyam", tags: ["hot"] },
   { id: "itm_set_tomyamcampur", cat: "cat_setnasi", art: "nasigoreng", sen: 1300, prep: 15, ms: "Set Nasi Putih Tomyam Campur", en: "White Rice Set, Mixed Tomyam", tags: ["hot"] },
@@ -1218,7 +1226,35 @@ function renderCats() {
   $("#catRail").innerHTML = CATS.map(c =>
     `<button data-cat="${c.id}" aria-pressed="${c.id === state.cat}">${c[lang]}</button>`
   ).join("");
+  railEdges();
 }
+
+/** Show the fade only on the side that actually has more sections. */
+function railEdges() {
+  const rail = $("#catRail");
+  const max = rail.scrollWidth - rail.clientWidth;
+  rail.classList.toggle("more-left", rail.scrollLeft > 1);
+  rail.classList.toggle("more-right", rail.scrollLeft < max - 1);
+}
+
+/* A vertical wheel scrolls the rail sideways. Without this a laptop cannot
+   move it at all — a wheel over a horizontal container does nothing unless
+   you know to hold shift, and with fourteen sections that is the difference
+   between finding nasi goreng and not. Passive:false because it has to be
+   able to preventDefault; at either end the gesture is handed back so the
+   page still scrolls. */
+$("#catRail").addEventListener("wheel", e => {
+  const rail = e.currentTarget;
+  if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+  const max = rail.scrollWidth - rail.clientWidth;
+  if (max <= 0) return;
+  if (e.deltaY < 0 && rail.scrollLeft <= 0) return;
+  if (e.deltaY > 0 && rail.scrollLeft >= max) return;
+  e.preventDefault();
+  rail.scrollLeft += e.deltaY;
+}, { passive: false });
+
+$("#catRail").addEventListener("scroll", railEdges, { passive: true });
 
 /* The heading is on screen right above the row, so the row drops it, exactly
    as the printed card does — "Kampung" under NASI GORENG. The stored name
@@ -1435,7 +1471,7 @@ function renderFeed() {
 function renderReceipt(o) {
   $("#printer").innerHTML = `<div class="receipt">
     <div class="rc-center rc-big">RESTORAN SURIANI</div>
-    <div class="rc-center">Kampung Baru</div>
+    <div class="rc-center">Jalan Imbi</div>
     <hr>
     <div class="rc-row"><span>${t("rc_order")}</span><span>#${o.id}</span></div>
     <div class="rc-row"><span>${t("rc_table")}</span><span>${o.table}</span></div>
@@ -1723,7 +1759,14 @@ document.addEventListener("click", e => {
   }
 
   const cat = e.target.closest("[data-cat]");
-  if (cat) { state.cat = cat.dataset.cat; renderCats(); renderMenu(); renderEmptyCategory(); return; }
+  if (cat) {
+    state.cat = cat.dataset.cat;
+    renderCats(); renderMenu(); renderEmptyCategory();
+    // It may be the eleventh of fourteen; keep the chosen one on screen.
+    $("#catRail").querySelector(`[data-cat="${state.cat}"]`)
+      ?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+    return;
+  }
 
   const surf = e.target.closest("[data-surface]");
   if (surf) {

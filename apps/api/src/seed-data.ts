@@ -109,7 +109,7 @@ export const SEED_ITEMS: SeedItem[] = [
     ["ayampaprik", "Set Nasi Putih Ayam Paprik", "White Rice Set, Chicken Paprik", 1100, ["hot"]],
     ["seafoodpaprik", "Set Nasi Putih Seafood Paprik", "White Rice Set, Seafood Paprik", 1300, ["hot"]],
     ["paprikcampur", "Set Nasi Putih Paprik Campur", "White Rice Set, Mixed Paprik", 1300, ["hot"]],
-    ["dagingkuhit", "Set Nasi Putih Daging Goreng Ku Hit", "White Rice Set, Beef Ku Hit", 1000],
+    ["dagingkunyit", "Set Nasi Putih Daging Goreng Kunyit", "White Rice Set, Turmeric Beef", 1000],
     ["tomyamayam", "Set Nasi Putih Tomyam Ayam", "White Rice Set, Chicken Tomyam", 1100, ["hot"]],
     ["tomyamdaging", "Set Nasi Putih Tomyam Daging", "White Rice Set, Beef Tomyam", 1200, ["hot"]],
     ["tomyamcampur", "Set Nasi Putih Tomyam Campur", "White Rice Set, Mixed Tomyam", 1300, ["hot"]],
@@ -419,8 +419,8 @@ export const SEED_MODIFIER_GROUPS: SeedModifierGroup[] = [
 ];
 
 export const SEED_OUTLETS = [
-  { name: "Suriani Kampung Baru", tables: 16 },
-  { name: "Suriani Bangi", tables: 12 },
+  { name: "Suriani Jalan Imbi (HQ)", tables: 16 },
+  { name: "Suriani Hotel Leo", tables: 12 },
 ];
 
 /**

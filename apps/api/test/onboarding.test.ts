@@ -54,8 +54,8 @@ describe("onboarding", () => {
     const body = (await res.json()) as SeedResponse;
     expect(body.created).toBe(true);
     expect(body.outlets.map((o) => o.name)).toEqual([
-      "Suriani Kampung Baru",
-      "Suriani Bangi",
+      "Suriani Jalan Imbi (HQ)",
+      "Suriani Hotel Leo",
     ]);
 
     // The QR printed for Meja 01 must actually open a menu.
@@ -104,7 +104,7 @@ describe("onboarding", () => {
       SeedResponse["outlets"][number],
     ];
 
-    // Order at Kampung Baru only.
+    // Order at Jalan Imbi only.
     const placed = await SELF.fetch(
       `https://api.test/api${kampungBaru.sampleQrPath}/orders`,
       {

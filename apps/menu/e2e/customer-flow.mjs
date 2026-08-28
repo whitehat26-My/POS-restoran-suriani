@@ -40,7 +40,7 @@ p.on('pageerror', (e) => errors.push(e.message));
 // 1. The printed URL serves the app, not JSON
 await p.goto(URL);
 await p.waitForSelector('.shop');
-(await p.textContent('.shop')).includes('Suriani Kampung Baru') || fail('shop name');
+(await p.textContent('.shop')).includes('Suriani Jalan Imbi') || fail('shop name');
 (await p.textContent('.table-tag')).includes('Meja 01') || fail('table label');
 ok('table URL serves the ordering page');
 
@@ -60,6 +60,23 @@ ngRows.length === 26 || fail(`Nasi Goreng should list 26 dishes, listed ${ngRows
 ngRows.includes('Kampung') || fail(`no short "Kampung" row: ${ngRows.slice(0, 5)}`);
 ngRows.some((n) => n.startsWith('Nasi Goreng')) && fail('rows still repeat the heading');
 ok('26 nasi goreng, listed short under the heading');
+
+// The rail holds fourteen sections and hides its scrollbar, so a plain wheel
+// has to move it — otherwise a laptop cannot reach past the fourth section
+// at all, and there is nothing on screen saying more exists.
+{
+  const rail = await p.$('.cat-rail');
+  const box = await rail.boundingBox();
+  await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await p.mouse.wheel(0, 400);
+  await p.waitForTimeout(250);
+  const moved = await p.evaluate(() => document.querySelector('.cat-rail').scrollLeft);
+  moved > 0 || fail(`a plain wheel does not scroll the category rail (scrollLeft ${moved})`);
+  const cls = await p.getAttribute('.cat-rail', 'class');
+  cls.includes('more-left') || fail('no fade showing there is more to the left');
+  await p.evaluate(() => { document.querySelector('.cat-rail').scrollLeft = 0; });
+  ok(`the category rail scrolls with a plain wheel, and fades to show there is more`);
+}
 
 // A category with no dishes yet says so rather than looking broken.
 await p.click('.cat-rail button:has-text("Burger")');
@@ -159,7 +176,7 @@ await p.click('.page .btn-accent');
 await p.waitForSelector('.sent-title', { timeout: 10000 });
 ok('order placed, confirmation shown');
 
-// 9. Verify server side: order in KB, none in Bangi, total is the server's own maths
+// 9. Verify server side: order at Jalan Imbi, none at Hotel Leo, priced by the server
 const login = await fetch('http://localhost:8787/api/auth/login', {
   method: 'POST', headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ phone: OWNER_PHONE, pin: OWNER_PIN }),
@@ -170,7 +187,7 @@ const kb = await (await fetch(`http://localhost:8787/api/outlets/${KB}/orders`, 
 const bg = await (await fetch(`http://localhost:8787/api/outlets/${BANGI}/orders`, { headers: hdr })).json();
 kb.orders.length === 1 || fail(`KB should have 1 order, has ${kb.orders.length}`);
 kb.orders[0].totalSen === 1480 || fail(`server total ${kb.orders[0].totalSen}, want 1480`);
-bg.orders.length === 0 || fail('Bangi must have zero orders');
+bg.orders.length === 0 || fail('Hotel Leo must have zero orders');
 ok('order landed in the right outlet only; server priced RM 14.80 itself');
 
 // The requests typed on the phone must survive into what the kitchen reads.

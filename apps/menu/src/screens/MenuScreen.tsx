@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { formatMYR } from "@suriani/core/money";
 import { shortLabel } from "@suriani/core/menu";
 
@@ -42,6 +42,59 @@ export function MenuScreen({
     : "";
   const latest = placed[placed.length - 1];
 
+  const rail = useRef<HTMLElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+
+  const measure = useCallback(() => {
+    const el = rail.current;
+    if (!el) return;
+    const max = el.scrollWidth - el.clientWidth;
+    setEdges({ left: el.scrollLeft > 1, right: el.scrollLeft < max - 1 });
+  }, []);
+
+  useLayoutEffect(measure, [measure, categories.length]);
+
+  /**
+   * A vertical wheel scrolls the rail sideways.
+   *
+   * Without this a laptop cannot move it at all: a wheel over a horizontal
+   * container does nothing unless you know to hold shift. Fourteen sections
+   * make that the difference between finding nasi goreng and not.
+   *
+   * Bound here rather than with onWheel because React's synthetic wheel
+   * handler is passive, and a passive listener cannot preventDefault.
+   */
+  useEffect(() => {
+    const el = rail.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      const max = el.scrollWidth - el.clientWidth;
+      if (max <= 0) return;
+      // At either end, hand the gesture back so the page still scrolls.
+      if (e.deltaY < 0 && el.scrollLeft <= 0) return;
+      if (e.deltaY > 0 && el.scrollLeft >= max) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("scroll", measure);
+    };
+  }, [measure]);
+
+  /** Keep the chosen section on screen — it may be the eleventh of fourteen. */
+  const pickCategory = (id: string) => {
+    setCat(id);
+    rail.current
+      ?.querySelector(`[data-cat="${id}"]`)
+      ?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  };
+
   return (
     <div className="scroll">
       {latest && (
@@ -56,12 +109,18 @@ export function MenuScreen({
         />
       )}
 
-      <nav className="cat-rail">
+      <nav
+        ref={rail}
+        className={`cat-rail ${edges.left ? "more-left" : ""} ${
+          edges.right ? "more-right" : ""
+        }`}
+      >
         {categories.map((c) => (
           <button
             key={c.id}
+            data-cat={c.id}
             aria-pressed={c.id === cat}
-            onClick={() => setCat(c.id)}
+            onClick={() => pickCategory(c.id)}
           >
             {lang === "ms" ? c.nameMs : c.nameEn}
           </button>

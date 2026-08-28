@@ -51,7 +51,7 @@ describe("encoder", () => {
 });
 
 const ticket = {
-  outletName: "Suriani Kampung Baru",
+  outletName: "Suriani Jalan Imbi",
   stationName: "Dapur",
   tableLabel: "Meja 05",
   orderCode: "#1842",
@@ -107,7 +107,7 @@ describe("kitchen docket", () => {
 });
 
 const receipt = {
-  outletName: "Suriani Kampung Baru",
+  outletName: "Suriani Jalan Imbi",
   tableLabel: "Meja 05",
   orderCode: "#1842",
   paidAt: new Date("2026-08-18T12:40:00Z"),

@@ -51,6 +51,14 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
   border-bottom: 1px solid var(--line);
 }
 .cat-rail::-webkit-scrollbar { display: none; }
+/* Fourteen sections do not fit on a phone, and a hidden scrollbar gives no
+   sign that more exists. The edge fades are the only thing saying "keep
+   going" — they appear only on the side that actually has more. */
+.cat-rail.more-right { mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+.cat-rail.more-left  { mask-image: linear-gradient(to right, transparent, #000 40px); }
+.cat-rail.more-left.more-right {
+  mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+}
 .cat-rail button {
   flex: none; padding: 7px 14px; border-radius: var(--r-full);
   font-size: var(--t-sm); font-weight: 600; white-space: nowrap;
