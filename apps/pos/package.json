@@ -12,7 +12,9 @@
     "@suriani/core": "workspace:*",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "@suriani/offline": "workspace:*"
+    "@suriani/offline": "workspace:*",
+    "@suriani/printer": "workspace:*",
+    "@capacitor/core": "^7.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.18",

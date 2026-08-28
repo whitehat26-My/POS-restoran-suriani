@@ -4,6 +4,8 @@
  */
 import type { Sen } from "@suriani/core/money";
 
+import { apiUrl } from "./base";
+
 export interface Outlet {
   id: string;
   name: string;
@@ -149,50 +151,50 @@ async function json<T>(res: Response): Promise<T> {
 
 export const api = {
   login: (phone: string, pin: string) =>
-    fetch("/api/auth/login", {
+    fetch(apiUrl("/api/auth/login"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone, pin }),
     }).then(json<{ user: { id: string; name: string; role: string } }>),
 
   outlets: () =>
-    fetch("/api/outlets").then(json<{ role: Role; outlets: Outlet[] }>),
+    fetch(apiUrl("/api/outlets")).then(json<{ role: Role; outlets: Outlet[] }>),
 
   floor: (outletId: string) =>
-    fetch(`/api/outlets/${outletId}/floor`).then(
+    fetch(apiUrl(`/api/outlets/${outletId}/floor`)).then(
       json<{ zones: Zone[]; tables: FloorTable[] }>,
     ),
 
   orders: (outletId: string) =>
-    fetch(`/api/outlets/${outletId}/orders`).then(json<{ orders: Ticket[] }>),
+    fetch(apiUrl(`/api/outlets/${outletId}/orders`)).then(json<{ orders: Ticket[] }>),
 
   menu: (outletId: string) =>
-    fetch(`/api/outlets/${outletId}/menu`).then(
+    fetch(apiUrl(`/api/outlets/${outletId}/menu`)).then(
       json<{ categories: MenuCategory[]; items: MenuItem[] }>,
     ),
 
   bill: (outletId: string, tableId: string) =>
-    fetch(`/api/outlets/${outletId}/tables/${tableId}/bill`).then(
+    fetch(apiUrl(`/api/outlets/${outletId}/tables/${tableId}/bill`)).then(
       json<BillSheet>,
     ),
 
   dailySales: (outletId: string, days = 30) =>
-    fetch(`/api/outlets/${outletId}/reports/daily?days=${days}`).then(
+    fetch(apiUrl(`/api/outlets/${outletId}/reports/daily?days=${days}`)).then(
       json<{ days: DayRow[] }>,
     ),
 
   daySummary: (outletId: string, date: string) =>
-    fetch(`/api/outlets/${outletId}/reports/daily/${date}`).then(
+    fetch(apiUrl(`/api/outlets/${outletId}/reports/daily/${date}`)).then(
       json<DaySummary>,
     ),
 
   printReceipt: (outletId: string, sessionId: string) =>
-    fetch(`/api/outlets/${outletId}/sessions/${sessionId}/receipt`, {
+    fetch(apiUrl(`/api/outlets/${outletId}/sessions/${sessionId}/receipt`), {
       method: "POST",
     }).then(json<{ ok: boolean; jobId: string; totalSen: Sen; itemCount: number }>),
 
   closeSession: (outletId: string, sessionId: string) =>
-    fetch(`/api/outlets/${outletId}/sessions/${sessionId}/close`, {
+    fetch(apiUrl(`/api/outlets/${outletId}/sessions/${sessionId}/close`), {
       method: "POST",
     }).then(json<{ ok: boolean }>),
 
@@ -223,10 +225,10 @@ export interface PrintHealth {
 
 export const printApi = {
   health: (outletId: string) =>
-    fetch(`/api/outlets/${outletId}/print/health`).then(json<PrintHealth>),
+    fetch(apiUrl(`/api/outlets/${outletId}/print/health`)).then(json<PrintHealth>),
 
   reprint: (outletId: string, jobId: string) =>
-    fetch(`/api/outlets/${outletId}/print/jobs/${jobId}/reprint`, {
+    fetch(apiUrl(`/api/outlets/${outletId}/print/jobs/${jobId}/reprint`), {
       method: "POST",
     }).then(json<{ ok: boolean }>),
 };

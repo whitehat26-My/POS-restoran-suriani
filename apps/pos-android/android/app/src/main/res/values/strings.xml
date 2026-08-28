@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Suriani POS</string>
+    <string name="title_activity_main">Suriani POS</string>
+    <string name="package_name">my.suriani.pos</string>
+    <string name="custom_url_scheme">my.suriani.pos</string>
+</resources>

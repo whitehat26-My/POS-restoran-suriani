@@ -24,7 +24,7 @@ and every order lands exactly once. Proven in the browser, not promised.
 | 4b | Per-dish requests, printable bill, daily record history | ✅ |
 | 4c | The real printed menu — 13 sections, 147 dishes, the RM 0.50 rule | ✅ |
 | 5 | Offline engine — op log, outbox, replay-safe sync | ✅ |
-| 5b | Android shell — Capacitor, native TCP + Bluetooth printing, APK | next |
+| 5b | Android shell — Capacitor project, native TCP + Bluetooth printing, APK in CI | 🚧 |
 
 Full plan and roadmap: [`docs/PLAN.md`](docs/PLAN.md).
 
@@ -106,7 +106,7 @@ kitchen has 86'd stays 86'd, and table QR codes are never touched. Deleting a di
 `order_items` snapshots the name and price — last month's bill still reads correctly without it.
 
 ```bash
-pnpm test        # 143 tests (17 ESC/POS golden bytes + 11 offline + 115 in the Workers runtime)
+pnpm test        # 153 tests (17 ESC/POS + 11 offline + 10 printer + 115 in the Workers runtime)
 pnpm typecheck
 pnpm lint
 ```
@@ -148,6 +148,8 @@ packages/core/       shared money arithmetic, ids and menu labelling — one
                      implementation for the API, the customer app, and later
                      the tablet
 packages/offline/    the till's offline spine: op log, outbox, drain loop
+packages/printer/    LAN→Bluetooth transport choice and the claim/print/ack loop
+apps/pos-android/    the till in a Capacitor shell + the native printer plugin
 packages/escpos/     ESC/POS encoder + ticket templates, golden-byte tested
 tools/printer-sim/   a thermal printer that isn't there (TCP :9100)
 tools/print-agent/   claims jobs, prints, acks; reference for Phase 5 Android
@@ -219,9 +221,30 @@ Five properties, each one a specific failure it prevents:
 Menu edits and stock counts stay server-authoritative — that is the entire conflict model, and it
 is small enough to actually get right.
 
-**Not yet done:** the Capacitor Android shell and native LAN→Bluetooth printing. The engine above
-runs in a plain browser today and the WebView inherits it unchanged, so what is left is the native
-transport and the APK.
+## The tablet
+
+`apps/pos-android/` wraps the same till in Capacitor, for the two things a browser can never do:
+open a raw socket to a printer on the shop LAN, and speak Bluetooth when the router dies.
+
+**The `Android APK` workflow builds a debug APK on every push** and attaches it to the run, so
+nobody has to install a toolchain — and it is what compiles the native code, since the rest of the
+project is TypeScript.
+
+- **LAN first, Bluetooth if the LAN does not answer within 1.5 seconds.** That deadline is the
+  mechanism, not a nicety: a printer that has quietly gone away does not refuse the connection, it
+  accepts nothing, and the socket sits there until the OS gives up a minute later — with the
+  kitchen idle through exactly the emergency the fallback exists for. The choice logic lives in
+  [`packages/printer`](packages/printer) under test; the sockets live in about two hundred lines of
+  Java that moves bytes and reports what happened.
+- **`BLUETOOTH_SCAN` is declared `neverForLocation`** — the app pairs with a printer on the counter
+  and has no interest in where anyone is. Without that flag Android demands the location permission
+  too, which a restaurant owner would rightly refuse.
+
+**Not finished.** The APK builds and the native printing is in place, but the tablet cannot sign in
+yet: it needs a setup screen for its server URL, agent token and printer addresses, and the server
+needs to accept a bearer token from the app's origin. Until then the till runs in a browser, where
+it already trades offline. The three outage drills in [`docs/PLAN.md`](docs/PLAN.md) need real
+hardware and are the gate before any branch goes live.
 
 ## The daily record
 

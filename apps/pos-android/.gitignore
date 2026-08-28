@@ -1,0 +1,13 @@
+# Built by `pnpm --filter @suriani/pos-android web` from apps/pos.
+www/
+
+# Gradle and Android build output.
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/capacitor-cordova-android-plugins/

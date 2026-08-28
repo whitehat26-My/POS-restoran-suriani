@@ -1,0 +1,62 @@
+name: Android APK
+
+# Separate from the fast typecheck/lint/test workflow on purpose: an Android
+# build takes minutes and pulls down an SDK, and it must never be the thing
+# standing between a one-line fix and a green tick.
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+    paths:
+      - 'apps/pos-android/**'
+      - 'apps/pos/**'
+      - 'packages/printer/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+jobs:
+  apk:
+    name: build debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # The transport choice — LAN first, Bluetooth when the router dies — is
+      # plain TypeScript and is tested here rather than on a device.
+      - name: Test the print logic
+        run: pnpm --filter @suriani/printer test
+
+      # Builds the till with a relative base and copies it into the native
+      # project's assets. Inside the APK the app is served from the device
+      # root, not from /pos/ as it is on the Worker.
+      - name: Build the till and sync Capacitor
+        run: pnpm --filter @suriani/pos-android sync
+
+      - name: Build APK
+        run: ./gradlew assembleDebug --no-daemon
+        working-directory: apps/pos-android/android
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: suriani-pos-debug-apk
+          path: apps/pos-android/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

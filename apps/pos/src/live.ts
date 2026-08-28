@@ -6,6 +6,8 @@
  * it replaces. The `state` callback drives the connection-health pill: the
  * cashier must always know whether the screen is truth.
  */
+import { wsUrl } from "./base";
+
 export type LiveState = "connecting" | "live" | "reconnecting";
 
 export interface LiveHandle {
@@ -26,10 +28,7 @@ export function openLive(
     if (closed) return;
     onState(attempt === 0 ? "connecting" : "reconnecting");
 
-    const scheme = location.protocol === "https:" ? "wss" : "ws";
-    socket = new WebSocket(
-      `${scheme}://${location.host}/api/outlets/${outletId}/ws`,
-    );
+    socket = new WebSocket(wsUrl(`/api/outlets/${outletId}/ws`));
 
     socket.onopen = () => {
       attempt = 0;
