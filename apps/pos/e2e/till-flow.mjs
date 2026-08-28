@@ -52,10 +52,11 @@ const custCtx = await b.newContext({ viewport: { width: 390, height: 844 } });
 const cust = await custCtx.newPage();
 await cust.goto(`${BASE}/t/${KB}/${TOKEN}`);
 await cust.waitForSelector('.dish');
-// Nasi Lemak has its own category now; the first tab is Nasi Campur.
-await cust.click('.cat-rail button:has-text("Nasi Lemak")');
-await cust.click('.dish:has-text("Nasi Lemak")');
-await cust.click('.opt:has-text("Tambah telur")');
+// The first tab is Nasi Ayam Hainan; teh tarik is the last section, and its
+// hot/iced/takeaway choice is what the RM 0.50 rule rides on.
+await cust.click('.cat-rail button:has-text("Minuman")');
+await cust.click('.dish:has-text("Teh Tarik")');
+await cust.click('.opt:has-text("Bungkus (ais)")');
 await cust.click('.sheet-add');
 await cust.click('.cart-bar .btn');
 await cust.waitForSelector('.total-row');
@@ -70,7 +71,7 @@ ok(`order on the till in ${elapsed}ms (< 1000ms gate)`);
 
 // Ticket carries the modifier line.
 const ticket = await pos.textContent('.ticket');
-ticket.includes('Tambah telur') || fail('ticket missing modifier');
+ticket.includes('Bungkus (ais)') || fail('ticket missing modifier');
 ok('ticket shows the modifier');
 
 // Table went blue with the running total.
@@ -101,7 +102,7 @@ ok('customer sees bill-requested note');
 await pos.click('.tbl[data-label="Meja 01"]');
 await pos.waitForSelector('[data-testid="bill"] .bill-total');
 const billText = await pos.textContent('[data-testid="bill"]');
-billText.includes('Tambah telur') || fail('bill missing modifier line');
+billText.includes('Bungkus (ais)') || fail('bill missing modifier line');
 ok('bill sheet shows lines and total');
 
 const strip = await pos.textContent('[data-testid="bill-strip"]');
@@ -121,9 +122,17 @@ await pos.waitForSelector('.tbl[data-state="empty"][data-label="Meja 01"]', { ti
 ok('bill closed, table freed');
 
 // --- 86 from the till ---
-await pos.click('.mi:has-text("Milo Ais") .mi-86');
-await pos.waitForSelector('.mi.is-86:has-text("Milo Ais")');
-ok('Milo Ais 86ed on the till');
+// 147 dishes: the counter finds one by typing, not by scrolling.
+await pos.fill('[data-testid="menu-search"]', 'lamb');
+await pos.waitForSelector('.mi:has-text("Lamb Chop")');
+const filtered = await pos.$$eval('.mi', (rows) => rows.length);
+filtered === 1 || fail(`menu search should leave one row, left ${filtered}`);
+ok('menu search finds a dish among 147');
+
+await pos.click('.mi:has-text("Lamb Chop") .mi-86');
+await pos.waitForSelector('.mi.is-86:has-text("Lamb Chop")');
+ok('Lamb Chop 86ed on the till');
+await pos.fill('[data-testid="menu-search"]', '');
 
 // --- The owner's daily record ---
 await pos.click('[data-testid="tab-records"]');
@@ -133,7 +142,7 @@ dayText.includes('RM') || fail('day list missing a sales figure');
 await pos.waitForSelector('[data-testid="day-detail"] .stat-value', { timeout: 5000 });
 const detailText = await pos.textContent('[data-testid="day-detail"]');
 detailText.includes('Jualan') || fail('day detail missing the sales headline');
-detailText.includes('Nasi Lemak Ayam Berempah') || fail('day detail missing the dish sold');
+detailText.includes('Teh Tarik') || fail('day detail missing the dish sold');
 ok("today's sale shows in the owner's daily record");
 
 if (posErrors.length) fail('POS page errors: ' + posErrors.join('; '));

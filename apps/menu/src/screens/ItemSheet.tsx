@@ -98,7 +98,7 @@ export function ItemSheet({
         <div className="sheet-grab" />
         <div className="sheet-head">
           <div className="sheet-art">
-            <DishArt itemId={item.id} />
+            <DishArt itemId={item.id} categoryId={item.categoryId} />
           </div>
           <div>
             <div className="sheet-name">

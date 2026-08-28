@@ -69,7 +69,7 @@ describe("onboarding", () => {
       table: { label: string };
       menu: {
         categories: { id: string; nameMs: string }[];
-        items: { nameMs: string; priceSen: number }[];
+        items: { id: string; nameMs: string; priceSen: number }[];
       };
     };
     expect(page.table.label).toBe("Meja 01");
@@ -82,10 +82,9 @@ describe("onboarding", () => {
       SEED_CATEGORIES.map((c) => c.nameMs),
     );
 
-    const nasiLemak = page.menu.items.find(
-      (i) => i.nameMs === "Nasi Lemak Ayam Berempah",
-    );
-    expect(nasiLemak?.priceSen).toBe(1200);
+    const nasiLemak = page.menu.items.find((i) => i.id === "itm_nl_biasa");
+    expect(nasiLemak?.nameMs).toBe("Nasi Lemak Biasa");
+    expect(nasiLemak?.priceSen).toBe(600);
   });
 
   it("is idempotent — re-running does not create a second Suriani", async () => {
@@ -112,7 +111,7 @@ describe("onboarding", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          lines: [{ menuItemId: "itm_nasilemak", qty: 2 }],
+          lines: [{ menuItemId: "itm_nl_biasa", qty: 2 }],
         }),
       },
     );
@@ -142,7 +141,7 @@ describe("onboarding", () => {
     ).json()) as { orders: unknown[] };
 
     expect(kbOrders.orders).toHaveLength(1);
-    expect(kbOrders.orders[0]!.totalSen).toBe(2400);
+    expect(kbOrders.orders[0]!.totalSen).toBe(1200);
     // Same owner, same organisation — but the other branch is a different
     // database and knows nothing about that order.
     expect(bangiOrders.orders).toHaveLength(0);

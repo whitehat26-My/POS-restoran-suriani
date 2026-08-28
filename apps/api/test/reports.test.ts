@@ -74,18 +74,18 @@ describe("daily record", () => {
 
     // 20:00 in KL on the 18th — which is 12:00 UTC on the 18th.
     await orderAt(stub, "tbl_d", "2026-08-18T12:00:00Z", [
-      { menuItemId: "itm_nasilemak", qty: 1 },
+      { menuItemId: "itm_nl_biasa", qty: 1 },
     ]);
     // 01:00 in KL on the 19th — which is 17:00 UTC on the *18th*.
     await orderAt(stub, "tbl_d", "2026-08-18T17:00:00Z", [
-      { menuItemId: "itm_roti", qty: 1 },
+      { menuItemId: "itm_roti_kosong", qty: 1 },
     ]);
 
     const { days } = await stub.dailySales({ timeZone: KL, days: 90 });
     const byDate = new Map(days.map((d) => [d.date, d]));
 
-    expect(byDate.get("2026-08-18")?.salesSen).toBe(1200);
-    expect(byDate.get("2026-08-19")?.salesSen).toBe(400);
+    expect(byDate.get("2026-08-18")?.salesSen).toBe(600);
+    expect(byDate.get("2026-08-19")?.salesSen).toBe(180);
   });
 
   it("counts modifiers, and never counts a voided order", async () => {
@@ -96,17 +96,17 @@ describe("daily record", () => {
       tables: [{ id: "tbl_m", label: "Meja 02", qrToken: t.qrToken + "m" }],
     });
 
-    // RM12.00 + RM1.50 extra egg, twice over.
+    // RM 2.50 teh tarik + 50 sen ais, twice over.
     await orderAt(stub, "tbl_m", "2026-07-01T04:00:00Z", [
-      { menuItemId: "itm_nasilemak", qty: 2, modifierOptionIds: ["mo_nl_telur"] },
+      { menuItemId: "itm_min_tehtarik", qty: 2, modifierOptionIds: ["mo_tehtarik_ais"] },
     ]);
     const voided = await orderAt(stub, "tbl_m", "2026-07-01T05:00:00Z", [
-      { menuItemId: "itm_nasilemak", qty: 1 },
+      { menuItemId: "itm_nl_biasa", qty: 1 },
     ]);
     await voidOrder(stub, voided.orderId);
 
     const summary = await stub.daySummary({ date: "2026-07-01", timeZone: KL });
-    expect(summary.salesSen).toBe(2700);
+    expect(summary.salesSen).toBe(600);
     expect(summary.itemCount).toBe(2);
     expect(summary.orderCount).toBe(1);
     expect(summary.billCount).toBe(1);
@@ -121,22 +121,22 @@ describe("daily record", () => {
     });
 
     await orderAt(stub, "tbl_b", "2026-06-10T04:30:00Z", [
-      { menuItemId: "itm_nasigoreng", qty: 2 },
+      { menuItemId: "itm_ng_kampung", qty: 2 },
     ]);
     await orderAt(stub, "tbl_b", "2026-06-10T09:15:00Z", [
-      { menuItemId: "itm_kopi", qty: 3 },
+      { menuItemId: "itm_min_kopio", qty: 3, modifierOptionIds: ["mo_kopio_panas"] },
     ]);
 
     const s = await stub.daySummary({ date: "2026-06-10", timeZone: KL });
 
-    expect(s.salesSen).toBe(950 * 2 + 320 * 3);
+    expect(s.salesSen).toBe(800 * 2 + 200 * 3);
     expect(s.byHour.map((h) => h.hour)).toEqual([12, 17]);
     expect(s.byHour.reduce((sum, h) => sum + h.salesSen, 0)).toBe(s.salesSen);
     expect(s.byCategory.reduce((sum, c) => sum + c.salesSen, 0)).toBe(s.salesSen);
     expect(s.byItem.reduce((sum, i) => sum + i.salesSen, 0)).toBe(s.salesSen);
 
     // Sorted by money, so the owner reads the answer off the top.
-    expect(s.byItem[0]?.menuItemId).toBe("itm_nasigoreng");
+    expect(s.byItem[0]?.menuItemId).toBe("itm_ng_kampung");
     expect(
       s.byCategory.find((c) => c.categoryId === "cat_minum")?.qty,
     ).toBe(3);
@@ -175,7 +175,7 @@ describe("daily record", () => {
       tables: [{ id: "tbl_h", label: "Meja 04", qrToken: t.qrToken + "h" }],
     });
     await orderAt(stub, "tbl_h", "2026-05-05T16:30:00Z", [
-      { menuItemId: "itm_milo", qty: 1 },
+      { menuItemId: "itm_min_milo", qty: 1, modifierOptionIds: ["mo_milo_panas"] },
     ]);
 
     // 16:30 UTC is 00:30 on the 6th in KL.
@@ -186,7 +186,7 @@ describe("daily record", () => {
     expect(res.status).toBe(200);
     expect((await res.json()) as { salesSen: number }).toMatchObject({
       date: "2026-05-06",
-      salesSen: 400,
+      salesSen: 300,
     });
   });
 });

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { formatMYR } from "@suriani/core/money";
+import { shortLabel } from "@suriani/core/menu";
 
 import type { MenuItem, TablePage } from "../api";
 import type { Lang, Key } from "../i18n";
@@ -33,6 +34,12 @@ export function MenuScreen({
   const categories = page.menu.categories;
   const [cat, setCat] = useState(categories[0]?.id ?? "");
   const items = page.menu.items.filter((i) => i.categoryId === cat);
+  const category = categories.find((c) => c.id === cat);
+  const heading = category
+    ? lang === "ms"
+      ? category.nameMs
+      : category.nameEn
+    : "";
   const latest = placed[placed.length - 1];
 
   return (
@@ -75,11 +82,14 @@ export function MenuScreen({
               onClick={() => onPick(item)}
             >
               <div className="dish-art">
-                <DishArt itemId={item.id} />
+                <DishArt itemId={item.id} categoryId={item.categoryId} />
               </div>
               <div>
                 <div className="dish-name">
-                  {lang === "ms" ? item.nameMs : item.nameEn}
+                  {/* The heading is right there above it, so drop it from the
+                      row exactly as the printed menu does. The stored name
+                      stays full for the docket and the bill. */}
+                  {shortLabel(lang === "ms" ? item.nameMs : item.nameEn, heading)}
                 </div>
                 <div className="dish-desc">
                   {lang === "ms" ? item.descMs : item.descEn}

@@ -76,6 +76,15 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 }
 .col-scroll { flex: 1; overflow-y: auto; padding: 0 var(--s4) var(--s4); }
 
+/* The counter's way through 147 dishes. */
+.menu-search {
+  flex: none; margin: 0 var(--s4) var(--s2);
+  padding: 8px var(--s3); border-radius: var(--r-md);
+  border: 1px solid var(--pos-edge); background: var(--pos-raised);
+  font: inherit; font-size: var(--t-sm); color: var(--pos-text);
+}
+.menu-search::placeholder { color: var(--pos-muted); }
+
 /* ---- floor ---- */
 .zone-name { font-size: var(--t-xs); font-weight: 700; color: var(--pos-muted); margin: var(--s3) 0 var(--s2); }
 .floor { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s2); }

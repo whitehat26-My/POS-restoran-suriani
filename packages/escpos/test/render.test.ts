@@ -180,3 +180,26 @@ describe("counter receipt", () => {
     expect(decode(renderReceipt(receipt))).not.toContain("SALINAN");
   });
 });
+
+describe("text encoding", () => {
+  it("folds accents to a letter a cook can read", () => {
+    const text = decode(
+      renderKitchenTicket({
+        ...ticket,
+        lines: [{ qty: 1, name: "Nescafé", modifiers: ["crème"], notes: "señor" }],
+      }),
+    );
+    expect(text).toContain("NESCAFE");
+    expect(text).toContain("creme");
+    expect(text).toContain("senor");
+    expect(text).not.toContain("?");
+  });
+
+  it("still refuses to emit a raw high byte", () => {
+    const bytes = renderKitchenTicket({
+      ...ticket,
+      lines: [{ qty: 1, name: "Nasi 🍚 Lemak", modifiers: [], notes: null }],
+    });
+    expect(bytes.every((b) => b <= 0x7f)).toBe(true);
+  });
+});

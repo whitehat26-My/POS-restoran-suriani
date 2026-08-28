@@ -78,11 +78,11 @@ describe("station routing", () => {
     expect(
       (
         await order(t, [
-          { menuItemId: "itm_nasilemak", qty: 1 },
+          { menuItemId: "itm_nl_biasa", qty: 1 },
           {
-            menuItemId: "itm_tehtarik",
+            menuItemId: "itm_min_tehtarik",
             qty: 2,
-            modifierOptionIds: ["mo_teh_ais"],
+            modifierOptionIds: ["mo_tehtarik_ais"],
           },
         ])
       ).status,
@@ -143,17 +143,17 @@ describe("the docket the cook actually reads", () => {
 
     await order(t, [
       {
-        menuItemId: "itm_nasilemak",
+        menuItemId: "itm_min_tehtarik",
         qty: 2,
-        modifierOptionIds: ["mo_nl_telur"],
+        modifierOptionIds: ["mo_tehtarik_bksais"],
         notes: "kurang pedas",
       },
     ]);
 
     const [job] = await claim(t, token);
     const slip = decode(job!.escposBase64);
-    expect(slip).toContain("2x NASI LEMAK");
-    expect(slip).toContain("Tambah telur");
+    expect(slip).toContain("2x TEH TARIK");
+    expect(slip).toContain("Bungkus (ais)");
     expect(slip).toContain("kurang pedas");
     // And still no prices on a kitchen slip.
     expect(slip).not.toContain("RM");
@@ -164,7 +164,7 @@ describe("leases", () => {
   it("returns an unacked job after its lease expires", async () => {
     const t = await withStations("Suriani");
     const token = await registerAgent(t);
-    await order(t, [{ menuItemId: "itm_nasilemak", qty: 1 }]);
+    await order(t, [{ menuItemId: "itm_nl_biasa", qty: 1 }]);
 
     const first = await claim(t, token);
     expect(first).toHaveLength(1);
@@ -193,7 +193,7 @@ describe("acks", () => {
   it("marks printed and stops offering the job", async () => {
     const t = await withStations("Suriani");
     const token = await registerAgent(t);
-    await order(t, [{ menuItemId: "itm_nasilemak", qty: 1 }]);
+    await order(t, [{ menuItemId: "itm_nl_biasa", qty: 1 }]);
 
     const [job] = await claim(t, token);
     const ack = await SELF.fetch(
@@ -211,7 +211,7 @@ describe("acks", () => {
   it("treats a repeated ack as a no-op, not a resurrection", async () => {
     const t = await withStations("Suriani");
     const token = await registerAgent(t);
-    await order(t, [{ menuItemId: "itm_nasilemak", qty: 1 }]);
+    await order(t, [{ menuItemId: "itm_nl_biasa", qty: 1 }]);
     const [job] = await claim(t, token);
 
     const send = () =>
@@ -241,7 +241,7 @@ describe("failure", () => {
   it("backs off, then gives up loudly", async () => {
     const t = await withStations("Suriani");
     const token = await registerAgent(t);
-    await order(t, [{ menuItemId: "itm_nasilemak", qty: 1 }]);
+    await order(t, [{ menuItemId: "itm_nl_biasa", qty: 1 }]);
     const [job] = await claim(t, token);
 
     const fail = () =>
@@ -276,7 +276,7 @@ describe("failure", () => {
   it("reports a stalled queue when the agent is simply gone", async () => {
     // The failure retries cannot catch: nothing is failing, jobs just sit.
     const t = await withStations("Suriani");
-    await order(t, [{ menuItemId: "itm_nasilemak", qty: 1 }]);
+    await order(t, [{ menuItemId: "itm_nl_biasa", qty: 1 }]);
 
     await runInDurableObject(
       env.OUTLET.get(env.OUTLET.idFromName(t.doId)),
@@ -302,7 +302,7 @@ describe("reprint", () => {
   it("re-queues from the stored snapshot and marks the slip", async () => {
     const t = await withStations("Suriani");
     const token = await registerAgent(t);
-    await order(t, [{ menuItemId: "itm_nasilemak", qty: 1 }]);
+    await order(t, [{ menuItemId: "itm_nl_biasa", qty: 1 }]);
     const [job] = await claim(t, token);
 
     const res = await SELF.fetch(
@@ -346,10 +346,10 @@ describe("agent credentials", () => {
     const tokenA = await registerAgent(a);
 
     // B's kitchen is busy; A's agent must see none of it.
-    await order(b, [{ menuItemId: "itm_nasilemak", qty: 1 }]);
+    await order(b, [{ menuItemId: "itm_nl_biasa", qty: 1 }]);
     expect(await claim(a, tokenA)).toHaveLength(0);
 
-    await order(a, [{ menuItemId: "itm_nasilemak", qty: 1 }]);
+    await order(a, [{ menuItemId: "itm_nl_biasa", qty: 1 }]);
     expect(await claim(a, tokenA)).toHaveLength(1);
   });
 
@@ -393,7 +393,7 @@ describe("counter receipt", () => {
     const token = await registerAgent(t);
 
     await order(t, [
-      { menuItemId: "itm_nasilemak", qty: 2, modifierOptionIds: ["mo_nl_telur"] },
+      { menuItemId: "itm_min_tehtarik", qty: 2, modifierOptionIds: ["mo_tehtarik_bksais"] },
     ]);
     // Drain the kitchen dockets so what is left is unambiguous.
     for (const job of await claim(t, token)) {
@@ -416,7 +416,7 @@ describe("counter receipt", () => {
       { method: "POST", headers: auth(t) },
     );
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ ok: true, totalSen: 2700, itemCount: 2 });
+    expect(await res.json()).toMatchObject({ ok: true, totalSen: 600, itemCount: 2 });
 
     const jobs = await claim(t, token);
     expect(jobs).toHaveLength(1);
@@ -424,9 +424,9 @@ describe("counter receipt", () => {
 
     const slip = decode(jobs[0]!.escposBase64);
     expect(slip).toContain("BIL");
-    expect(slip).toContain("Nasi Lemak Ayam Berempah");
-    expect(slip).toContain("Tambah telur");
-    expect(slip).toContain("27.00");
+    expect(slip).toContain("Teh Tarik");
+    expect(slip).toContain("Bungkus (ais)");
+    expect(slip).toContain("6.00");
     expect(slip).toContain("Sila jelaskan di kaunter");
     // Nothing has been paid, so nothing claims to have been.
     expect(slip).not.toContain("TUNAI");
@@ -435,7 +435,7 @@ describe("counter receipt", () => {
   it("carries the outlet's own name, never a default", async () => {
     const t = await withStations("Warung Bangi");
     const token = await registerAgent(t);
-    await order(t, [{ menuItemId: "itm_kopi", qty: 1 }]);
+    await order(t, [{ menuItemId: "itm_min_kopio", qty: 1, modifierOptionIds: ["mo_kopio_panas"] }]);
 
     const jobs = await claim(t, token);
     const slip = decode(jobs[0]!.escposBase64);
@@ -446,7 +446,7 @@ describe("counter receipt", () => {
   it("reprints a bill as a bill, stamped as a copy", async () => {
     const t = await withStations("Suriani");
     const token = await registerAgent(t);
-    await order(t, [{ menuItemId: "itm_roti", qty: 1 }]);
+    await order(t, [{ menuItemId: "itm_roti_kosong", qty: 1 }]);
     for (const job of await claim(t, token)) {
       await SELF.fetch(`https://api.test/api/agent/jobs/${job.id}/ack`, {
         method: "POST",
@@ -489,7 +489,7 @@ describe("counter receipt", () => {
   it("answers 404 for a session in another outlet", async () => {
     const a = await withStations("Suriani A");
     const b = await withStations("Suriani B");
-    await order(b, [{ menuItemId: "itm_kopi", qty: 1 }]);
+    await order(b, [{ menuItemId: "itm_min_kopio", qty: 1, modifierOptionIds: ["mo_kopio_panas"] }]);
 
     const floor = (await (
       await SELF.fetch(`https://api.test/api/outlets/${b.outletId}/floor`, {
@@ -514,7 +514,12 @@ describe("a request on a dish with no options", () => {
     // Kopi O Ais has no modifier groups at all. Half the menu is like this,
     // and a note left on one of those dishes must not fall on the floor.
     await order(t, [
-      { menuItemId: "itm_kopi", qty: 1, notes: "kurang manis, bungkus" },
+      {
+        menuItemId: "itm_min_kopio",
+        qty: 1,
+        modifierOptionIds: ["mo_kopio_panas"],
+        notes: "kurang manis, bungkus",
+      },
     ]);
 
     const jobs = await claim(t, token);

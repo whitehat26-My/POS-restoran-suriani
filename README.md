@@ -10,8 +10,8 @@ Two branches of Restoran Suriani are customer zero.
 
 ## Status
 
-**Phase 4b complete.** The owner's own menu headings, a request box on every dish, a printable
-bill at the counter, and a daily record she can read on her phone.
+**Phase 4c complete.** The restaurant's real printed menu — 13 sections, 147 dishes, and the
+card's RM 0.50 rule — behind a request box on every dish, a printable bill, and a daily record.
 
 | Phase | | |
 |---|---|---|
@@ -21,7 +21,8 @@ bill at the counter, and a daily record she can read on her phone.
 | 2b | Customer ordering app — menu, modifiers, cart, offline shell | ✅ |
 | 3 | Cashier POS — live floor map, tickets, bills, 86-ing, Minta Bil / Panggil Pelayan | ✅ |
 | 4 | Print pipeline — ESC/POS, station routing, retry, reprint | ✅ |
-| 4b | The owner's eight categories, per-dish requests, printable bill, daily record | ✅ |
+| 4b | Per-dish requests, printable bill, daily record history | ✅ |
+| 4c | The real printed menu — 13 sections, 147 dishes, the RM 0.50 rule | ✅ |
 | 5 | Android POS shell — offline, dual-transport printing | next |
 
 Full plan and roadmap: [`docs/PLAN.md`](docs/PLAN.md).
@@ -69,8 +70,30 @@ ADMIN_SEED_TOKEN=any-local-value pnpm seed
 
 The seed prints a working table QR URL for each branch.
 
-The menu lives in [`apps/api/src/seed-data.ts`](apps/api/src/seed-data.ts) until Phase 7 gives the
-owner an editor. To push a changed menu to branches that are already seeded:
+## The menu
+
+[`apps/api/src/seed-data.ts`](apps/api/src/seed-data.ts) is a transcription of the restaurant's
+printed card: **13 sections and 147 dishes**, in the card's own order, plus an empty Burger section
+the owner is keeping for later. It stays there until Phase 7 gives her an editor.
+
+Two rules the card states that the code has to enforce:
+
+- **"Minuman sejuk & bungkus dikenakan caj tambahan RM 0.50"** — and it is charged **once**, not
+  twice. An iced takeaway teh tarik is RM 3.00, not RM 3.50. Modelled as *one* single-select group
+  per drink (*panas · ais · bungkus panas · bungkus ais*) rather than two independent `+50` options,
+  which makes the cap structural: you cannot choose twice, so you cannot be charged twice.
+- **"MEE • KUETIAU • BIHUN • MAGGI" over "GORENG / SUP"** are choices, not decoration. Nine dishes
+  with two free required options each, instead of seventy-two rows.
+
+**Dish names are stored in full** — "Nasi Goreng Kampung", "Roti Susu" — because *Susu*, *Milo*,
+*Telur Mata* and *Ayam Goreng* each appear in two sections at two prices, and a docket reading
+"1x Susu" for a Roti Susu is a real mis-serve. The phone shortens them against the heading, exactly
+as the printed card does, via `shortLabel()` in [`packages/core`](packages/core/src/menu.ts).
+
+`test/menu-data.test.ts` asserts the section sizes and a spread of prices straight off the card, so
+a typo in one of 147 rows fails CI instead of reaching a customer.
+
+To push a changed menu to branches that are already seeded:
 
 ```bash
 ADMIN_SEED_TOKEN=any-local-value pnpm seed --sync-menu
@@ -82,7 +105,7 @@ kitchen has 86'd stays 86'd, and table QR codes are never touched. Deleting a di
 `order_items` snapshots the name and price — last month's bill still reads correctly without it.
 
 ```bash
-pnpm test        # 98 tests (15 ESC/POS golden bytes + 83 in the Workers runtime)
+pnpm test        # 119 tests (17 ESC/POS golden bytes + 102 in the Workers runtime)
 pnpm typecheck
 pnpm lint
 ```
@@ -114,13 +137,14 @@ apps/api/            Cloudflare Worker — API, control plane, outlet Durable Ob
   src/outlet/        per-outlet schema, migrations, Durable Object
   src/control/       D1 schema: orgs, users, outlets, devices, usage
   test/              isolation · onboarding · tables · modifiers · pricing ·
-                     realtime · printing · money · menu-sync · reports
+                     realtime · printing · money · menu-sync · reports · menu-data
 apps/menu/           customer ordering app (Vite + React), served at /
 apps/pos/            the till and the owner's daily record (Vite + React, dark), at /pos/
                      — both assembled into apps/api/.assets by `pnpm build:web`;
                      each app's e2e/ holds its browser test
-packages/core/       shared money arithmetic and ids — one implementation for
-                     the API, the customer app, and later the tablet
+packages/core/       shared money arithmetic, ids and menu labelling — one
+                     implementation for the API, the customer app, and later
+                     the tablet
 packages/escpos/     ESC/POS encoder + ticket templates, golden-byte tested
 tools/printer-sim/   a thermal printer that isn't there (TCP :9100)
 tools/print-agent/   claims jobs, prints, acks; reference for Phase 5 Android
@@ -146,6 +170,8 @@ column for counter orders and 86-ing.
   per table, coalescing impatient taps.
 - **Tapping a table answers the counter's first question** — a strip across the top of the bill
   reads *"7 hidangan · RM 84.20"* before any scrolling, then every order and line beneath it.
+- **The menu column has a search box**, because 147 dishes in one scroll is not something anyone
+  can work during service.
 - **"Cetak resit" prints the bill** at the counter station. Nothing has been paid yet, so the slip
   says `BIL`, names no payment method, and does not kick the drawer. Phase 6 calls the same
   renderer with a method and gets a paid receipt with the pulse.
@@ -205,8 +231,8 @@ to your terminal; `tools/print-agent` drives it, and drives real hardware unchan
 `/t/<outletId>/<qrToken>` — the URL on every printed card — serves the ordering app;
 its data lives under `/api/t/...`. One Worker serves both, so they cannot drift.
 
-- **The categories are the kitchen's own** — nasi campur, nasi lemak, nasi goreng, mee/bihun,
-  roti, burger, western, minuman. A category with nothing in it yet says so rather than
+- **The whole printed menu, 4.8 KB gzipped** — 14 sections and 147 dishes, listed short under
+  their heading the way the card does. A section with nothing in it yet says so rather than
   rendering blank.
 - **Every dish takes a request.** Tapping any item opens a sheet with its options, a quantity
   stepper, and an *"Ada permintaan?"* box with one-tap chips (kurang manis, tanpa cili, bungkus).

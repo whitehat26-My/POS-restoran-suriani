@@ -122,11 +122,11 @@ describe("menu sync", () => {
       tables: [],
     });
 
-    await stub.setItemAvailability({ itemId: "itm_nasilemak", available: false });
+    await stub.setItemAvailability({ itemId: "itm_nl_biasa", available: false });
     await sync(stub);
 
     const menu = await stub.listMenu();
-    expect(menu.items.find((i) => i.id === "itm_nasilemak")?.isAvailable).toBe(0);
+    expect(menu.items.find((i) => i.id === "itm_nl_biasa")?.isAvailable).toBe(0);
   });
 
   it("bumps menuVersion so a phone already on the menu refetches", async () => {

@@ -38,16 +38,16 @@ describe("modifier options", () => {
 
     const res = await order(t, [
       {
-        menuItemId: "itm_nasilemak",
+        menuItemId: "itm_min_tehtarik",
         qty: 2,
-        modifierOptionIds: ["mo_nl_telur", "mo_nl_ayam"],
+        modifierOptionIds: ["mo_tehtarik_bksais"],
       },
     ]);
     expect(res.status).toBe(201);
 
     const placed = (await res.json()) as { totalSen: number };
-    // (1200 + 150 telur + 450 ayam) × 2
-    expect(placed.totalSen).toBe(3600);
+    // (250 + 50 surcharge) x 2
+    expect(placed.totalSen).toBe(600);
   });
 
   it("appears in the customer menu payload", async () => {
@@ -63,42 +63,46 @@ describe("modifier options", () => {
       };
     };
 
-    const teh = page.menu.items.find((i) => i.id === "itm_tehtarik");
+    const teh = page.menu.items.find((i) => i.id === "itm_min_tehtarik");
     expect(teh?.modifierGroups).toHaveLength(1);
-    expect(teh?.modifierGroups[0]!.nameMs).toBe("Panas atau ais?");
+    expect(teh?.modifierGroups[0]!.nameMs).toBe("Panas, ais atau bungkus?");
     expect(teh?.modifierGroups[0]!.options.map((o) => o.id)).toEqual([
-      "mo_teh_panas",
-      "mo_teh_ais",
+      "mo_tehtarik_panas",
+      "mo_tehtarik_ais",
+      "mo_tehtarik_bkspanas",
+      "mo_tehtarik_bksais",
     ]);
   });
 
   it("enforces a required choice", async () => {
     const t = await withMenu("Suriani");
 
-    // Teh Tarik's temperature group is min_select 1: hot or iced, you must say.
-    const missing = await order(t, [{ menuItemId: "itm_tehtarik", qty: 1 }]);
+    // Every drink must say hot, iced or takeaway — that choice is what the
+    // menu's RM 0.50 surcharge rides on, so it cannot be skipped.
+    const missing = await order(t, [{ menuItemId: "itm_min_tehtarik", qty: 1 }]);
     expect(missing.status).toBe(400);
     expect(((await missing.json()) as { error: string }).error).toBe(
       "option_required",
     );
 
     const chosen = await order(t, [
-      { menuItemId: "itm_tehtarik", qty: 1, modifierOptionIds: ["mo_teh_ais"] },
+      { menuItemId: "itm_min_tehtarik", qty: 1, modifierOptionIds: ["mo_tehtarik_ais"] },
     ]);
     expect(chosen.status).toBe(201);
-    // 300 + 50 for ais
-    expect(((await chosen.json()) as { totalSen: number }).totalSen).toBe(350);
+    // 250 + 50 for ais
+    expect(((await chosen.json()) as { totalSen: number }).totalSen).toBe(300);
   });
 
   it("enforces the maximum", async () => {
     const t = await withMenu("Suriani");
 
-    // Extras group allows two. Sending three (double egg + chicken) is over.
+    // Hot and iced at once. The group allows one, and the server is the thing
+    // that says so — the UI only makes it hard, not impossible.
     const res = await order(t, [
       {
-        menuItemId: "itm_nasilemak",
+        menuItemId: "itm_min_tehtarik",
         qty: 1,
-        modifierOptionIds: ["mo_nl_telur", "mo_nl_telur", "mo_nl_ayam"],
+        modifierOptionIds: ["mo_tehtarik_panas", "mo_tehtarik_ais"],
       },
     ]);
     expect(res.status).toBe(400);
@@ -110,13 +114,13 @@ describe("modifier options", () => {
   it("refuses an option borrowed from another dish", async () => {
     const t = await withMenu("Suriani");
 
-    // "Tambah ayam" belongs to nasi lemak. Attaching it to mee goreng must
-    // fail — otherwise a dish could borrow another's cheaper extras.
+    // "Sup" belongs to Mee Kungfu. Attaching it to a teh tarik must fail —
+    // otherwise a dish could borrow another's cheaper options.
     const res = await order(t, [
       {
-        menuItemId: "itm_meegoreng",
+        menuItemId: "itm_min_tehtarik",
         qty: 1,
-        modifierOptionIds: ["mo_nl_ayam"],
+        modifierOptionIds: ["mo_kungfu_sup"],
       },
     ]);
     expect(res.status).toBe(400);
@@ -129,7 +133,7 @@ describe("modifier options", () => {
     const t = await withMenu("Suriani");
 
     const placed = await order(t, [
-      { menuItemId: "itm_tehtarik", qty: 1, modifierOptionIds: ["mo_teh_ais"] },
+      { menuItemId: "itm_min_tehtarik", qty: 1, modifierOptionIds: ["mo_tehtarik_ais"] },
     ]);
     expect(placed.status).toBe(201);
 
@@ -137,7 +141,7 @@ describe("modifier options", () => {
     const stub = env.OUTLET.get(env.OUTLET.idFromName(t.doId));
     await runInDurableObject(stub, async (_i, state) => {
       state.storage.sql.exec(
-        "UPDATE modifier_options SET price_delta_sen = 200 WHERE id = 'mo_teh_ais'",
+        "UPDATE modifier_options SET price_delta_sen = 200 WHERE id = 'mo_tehtarik_ais'",
       );
     });
 
@@ -147,12 +151,68 @@ describe("modifier options", () => {
         headers: auth(t),
       })
     ).json()) as { orders: { totalSen: number }[] };
-    expect(orders.orders[0]!.totalSen).toBe(350);
+    expect(orders.orders[0]!.totalSen).toBe(300);
 
     // A new order pays the new price.
     const fresh = await order(t, [
-      { menuItemId: "itm_tehtarik", qty: 1, modifierOptionIds: ["mo_teh_ais"] },
+      { menuItemId: "itm_min_tehtarik", qty: 1, modifierOptionIds: ["mo_tehtarik_ais"] },
     ]);
-    expect(((await fresh.json()) as { totalSen: number }).totalSen).toBe(500);
+    expect(((await fresh.json()) as { totalSen: number }).totalSen).toBe(450);
+  });
+});
+
+describe("the menu's RM 0.50 rule", () => {
+  it("charges it once for an iced drink taken away, not twice", async () => {
+    const t = await withMenu("Suriani");
+
+    const res = await order(t, [
+      {
+        menuItemId: "itm_min_tehtarik",
+        qty: 1,
+        modifierOptionIds: ["mo_tehtarik_bksais"],
+      },
+    ]);
+    expect(res.status).toBe(201);
+    // RM 2.50 + one surcharge. Two independent +50 options would make this
+    // RM 3.50, which is not what the owner charges.
+    expect(((await res.json()) as { totalSen: number }).totalSen).toBe(300);
+  });
+
+  it("does not charge to chill something already cold", async () => {
+    const t = await withMenu("Suriani");
+
+    const dineIn = await order(t, [
+      { menuItemId: "itm_min_airsmall", qty: 1, modifierOptionIds: ["mo_airsmall_sini"] },
+    ]);
+    expect(((await dineIn.json()) as { totalSen: number }).totalSen).toBe(150);
+
+    const takeaway = await order(t, [
+      { menuItemId: "itm_min_airsmall", qty: 1, modifierOptionIds: ["mo_airsmall_bungkus"] },
+    ]);
+    expect(((await takeaway.json()) as { totalSen: number }).totalSen).toBe(200);
+  });
+
+  it("is free to choose a noodle and free to choose sup", async () => {
+    const t = await withMenu("Suriani");
+
+    const res = await order(t, [
+      {
+        menuItemId: "itm_mee_kungfu",
+        qty: 1,
+        modifierOptionIds: ["mo_kungfu_kuetiau", "mo_kungfu_sup"],
+      },
+    ]);
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { totalSen: number }).totalSen).toBe(1000);
+  });
+
+  it("will not let a noodle dish through without both choices", async () => {
+    const t = await withMenu("Suriani");
+
+    const res = await order(t, [
+      { menuItemId: "itm_mee_kungfu", qty: 1, modifierOptionIds: ["mo_kungfu_kuetiau"] },
+    ]);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("option_required");
   });
 });

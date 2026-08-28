@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatMYR } from "@suriani/core/money";
+import { shortLabel } from "@suriani/core/menu";
 import { ulid } from "@suriani/core/ids";
 
 import {
@@ -40,6 +41,8 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
   const [configItem, setConfigItem] = useState<MenuItem | null>(null);
   const [cart, setCart] = useState<ConfiguredLine[]>([]);
   const [pickTable, setPickTable] = useState(false);
+  // 147 dishes in one scroll is unusable at a counter mid-service.
+  const [menuQuery, setMenuQuery] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [printHealth, setPrintHealth] = useState<PrintHealth | null>(null);
   const toastTimer = useRef<number>(undefined);
@@ -235,6 +238,14 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
 
   const pending = tickets.filter((t) => t.status === "placed");
   const cartTotal = cart.reduce((s, l) => s + l.lineSen, 0);
+
+  const q = menuQuery.trim().toLowerCase();
+  const shown = q
+    ? items.filter(
+        (i) =>
+          i.nameMs.toLowerCase().includes(q) || i.nameEn.toLowerCase().includes(q),
+      )
+    : items;
 
   const submitCart = async (tableId: string) => {
     setPickTable(false);
@@ -451,20 +462,30 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
 
         <section className="col">
           <div className="col-head">Menu · pesanan kaunter · 86</div>
+          <input
+            className="menu-search"
+            placeholder="Cari hidangan…"
+            value={menuQuery}
+            data-testid="menu-search"
+            onChange={(e) => setMenuQuery(e.target.value)}
+          />
           <div className="col-scroll">
-            {categories.map((c) => (
-              <div key={c.id}>
-                <div className="zone-name">{c.nameMs}</div>
-                {items
-                  .filter((i) => i.categoryId === c.id)
-                  .map((i) => (
+            {shown.length === 0 && <p className="empty">Tiada hidangan sepadan.</p>}
+            {categories.map((c) => {
+              const inCategory = shown.filter((i) => i.categoryId === c.id);
+              if (inCategory.length === 0) return null;
+              return (
+                <div key={c.id}>
+                  <div className="zone-name">{c.nameMs}</div>
+                  {inCategory.map((i) => (
                     <div className={`mi ${i.isAvailable === 0 ? "is-86" : ""}`} key={i.id}>
                       <button
                         className="mi-name"
                         disabled={i.isAvailable === 0}
                         onClick={() => setConfigItem(i)}
+                        title={i.nameMs}
                       >
-                        {i.nameMs}
+                        {shortLabel(i.nameMs, c.nameMs)}
                       </button>
                       <span className="mi-price num">{formatMYR(i.priceSen)}</span>
                       <button
@@ -475,8 +496,9 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
                       </button>
                     </div>
                   ))}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
           {cart.length > 0 && (
             <div style={{ padding: "12px 16px", borderTop: "1px solid var(--pos-edge)" }}>

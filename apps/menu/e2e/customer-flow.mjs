@@ -47,10 +47,19 @@ ok('table URL serves the ordering page');
 // 2. The eight categories the owner named, in her order
 const rail = await p.$$eval('.cat-rail button', (bs) => bs.map((b) => b.textContent.trim()));
 JSON.stringify(rail) === JSON.stringify([
-  'Nasi Campur', 'Nasi Lemak', 'Nasi Goreng', 'Mee / Bihun',
-  'Roti', 'Burger', 'Western', 'Minuman',
+  'Nasi Ayam Hainan', 'Nasi Lemak', 'Set Nasi Putih', 'Mee / Kuetiau / Bihun / Maggi',
+  'Nasi Goreng', 'Western Food', 'Pasta', 'Side Dish', 'Indonesian Food',
+  'Sarapan', 'Set Tambahan', 'Roti', 'Burger', 'Minuman',
 ]) || fail(`category rail: ${JSON.stringify(rail)}`);
-ok('the eight categories render in order');
+ok('all fourteen sections render in the printed order');
+
+// Rows drop the heading exactly as the printed card does.
+await p.click('.cat-rail button:has-text("Nasi Goreng")');
+const ngRows = await p.$$eval('.dish-name', (ns) => ns.map((n) => n.textContent.trim()));
+ngRows.length === 26 || fail(`Nasi Goreng should list 26 dishes, listed ${ngRows.length}`);
+ngRows.includes('Kampung') || fail(`no short "Kampung" row: ${ngRows.slice(0, 5)}`);
+ngRows.some((n) => n.startsWith('Nasi Goreng')) && fail('rows still repeat the heading');
+ok('26 nasi goreng, listed short under the heading');
 
 // A category with no dishes yet says so rather than looking broken.
 await p.click('.cat-rail button:has-text("Burger")');
@@ -58,34 +67,41 @@ await p.waitForSelector('.empty-cat');
 ok('an empty category explains itself');
 
 // 3. Language toggle
-await p.click('.cat-rail button:has-text("Nasi Lemak")');
+await p.click('.cat-rail button:has-text("Western Food")');
 await p.click('.lang-swap button:has-text("EN")');
-await p.waitForSelector('.dish-name:has-text("Nasi Lemak with Spiced Chicken")');
+await p.waitForSelector('.dish-name:has-text("Lamb Chop")');
 ok('EN toggle swaps strings');
 await p.click('.lang-swap button:has-text("BM")');
 
-// 4. Required modifier blocks Add until chosen (Teh Tarik, min_select 1)
+// 4. The menu's RM 0.50 rule, enforced in the UI as one choice, not two.
 await p.click('.cat-rail button:has-text("Minuman")');
 await p.click('.dish:has-text("Teh Tarik")');
 await p.waitForSelector('.sheet');
 if (await p.locator('.sheet-add').isEnabled()) fail('Add enabled before required choice');
-await p.click('.opt:has-text("Ais")');
+await p.click('.opt:has-text("Bungkus (ais)")');
 if (!(await p.locator('.sheet-add').isEnabled())) fail('Add still disabled after choice');
-(await p.textContent('.sheet-add')).includes('3.50') || fail('sheet price should be RM 3.50 (3.00 + 0.50 ais)');
+(await p.textContent('.sheet-add')).includes('3.00') ||
+  fail('iced takeaway teh tarik should be RM 3.00 (2.50 + one 0.50), not RM 3.50');
 await p.click('.sheet-add');
-ok('required option enforced in UI, priced +ais');
+ok('iced + bungkus charges the 50 sen once, not twice');
 
-// 5. Nasi lemak with tambah telur, and a request typed by hand
-await p.click('.cat-rail button:has-text("Nasi Lemak")');
-await p.click('.dish:has-text("Nasi Lemak")');
-await p.click('.opt:has-text("Tambah telur")');
+// 5. The noodle section: pick the dish, the noodle, and goreng or sup.
+await p.click('.cat-rail button:has-text("Mee / Kuetiau")');
+await p.click('.dish:has-text("Kungfu")');
+await p.waitForSelector('.sheet');
+if (await p.locator('.sheet-add').isEnabled()) fail('Add enabled before both noodle choices');
+await p.click('.opt:has-text("Kuetiau")');
+if (await p.locator('.sheet-add').isEnabled()) fail('Add enabled with only one of two choices');
+await p.click('.opt:has-text("Sup")');
+if (!(await p.locator('.sheet-add').isEnabled())) fail('Add still disabled after both choices');
+(await p.textContent('.sheet-add')).includes('10.00') || fail('the noodle choices must be free');
 await p.fill('.notes-input', 'kurang pedas');
 await p.click('.sheet-add');
-ok('extras added with a request');
+ok('noodle and goreng-or-sup both required, both free');
 
 // 6. A dish with no options at all still takes a request, by chip
-await p.click('.cat-rail button:has-text("Minuman")');
-await p.click('.dish:has-text("Kopi O Ais")');
+await p.click('.cat-rail button:has-text("Roti")');
+await p.click('.dish:has-text("Kosong")');
 await p.waitForSelector('.request .notes-input');
 await p.click('.chip:has-text("Kurang manis")');
 const chipNote = await p.inputValue('.notes-input');
@@ -97,8 +113,8 @@ ok('a dish with no options still takes a request');
 await p.reload();
 await p.waitForSelector('.cart-bar.is-up');
 const total = await p.textContent('.cart-total strong');
-total.includes('20.20') ||
-  fail(`cart total after reload: ${total} (want RM 20.20 = 3.50 + 13.50 + 3.20)`);
+total.includes('14.80') ||
+  fail(`cart total after reload: ${total} (want RM 14.80 = 3.00 + 10.00 + 1.80)`);
 ok('cart survives reload with correct total');
 
 // 8. Submit
@@ -118,9 +134,9 @@ const hdr = { Authorization: `Bearer ${token}` };
 const kb = await (await fetch(`http://localhost:8787/api/outlets/${KB}/orders`, { headers: hdr })).json();
 const bg = await (await fetch(`http://localhost:8787/api/outlets/${BANGI}/orders`, { headers: hdr })).json();
 kb.orders.length === 1 || fail(`KB should have 1 order, has ${kb.orders.length}`);
-kb.orders[0].totalSen === 2020 || fail(`server total ${kb.orders[0].totalSen}, want 2020`);
+kb.orders[0].totalSen === 1480 || fail(`server total ${kb.orders[0].totalSen}, want 1480`);
 bg.orders.length === 0 || fail('Bangi must have zero orders');
-ok('order landed in the right outlet only; server priced RM 20.20 itself');
+ok('order landed in the right outlet only; server priced RM 14.80 itself');
 
 // The requests typed on the phone must survive into what the kitchen reads.
 const notes = kb.orders[0].lines.flatMap((l) => (l.notes ? [l.notes] : []));

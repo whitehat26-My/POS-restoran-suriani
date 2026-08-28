@@ -6,6 +6,7 @@
   "description": "Shared money arithmetic and identifiers. One implementation, three consumers (API, customer app, tablet) — a second copy of money maths is exactly how totals drift.",
   "exports": {
     "./money": "./src/money.ts",
-    "./ids": "./src/ids.ts"
+    "./ids": "./src/ids.ts",
+    "./menu": "./src/menu.ts"
   }
 }

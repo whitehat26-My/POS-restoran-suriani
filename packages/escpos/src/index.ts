@@ -32,13 +32,22 @@ export class EscPos {
   /**
    * Text.
    *
-   * Bahasa Malaysia is plain ASCII, so the default code page is safe and no
-   * transliteration is needed. Any non-ASCII byte (a stray “smart quote”
-   * pasted into a menu name) is replaced rather than emitted, because a raw
-   * high byte prints as a random glyph and can desynchronise some printers.
+   * Bahasa Malaysia is plain ASCII, so the default code page is safe. Accents
+   * are folded to their base letter, and anything still non-ASCII (a stray
+   * “smart quote” pasted into a menu name) is replaced rather than emitted,
+   * because a raw high byte prints as a random glyph and can desynchronise
+   * some printers.
    */
   text(value: string): this {
-    const safe = value.replace(/[^\x20-\x7e]/g, (ch) =>
+    // Fold accents first: NFD splits "é" into "e" plus a combining mark, and
+    // dropping the mark leaves a letter a cook can read. Without this a menu
+    // name like Nescafé prints "Nescaf?" — and Phase 7 lets the owner type
+    // dish names herself, so this will matter more, not less.
+    const folded = value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    const safe = folded.replace(/[^\x20-\x7e]/g, (ch) =>
       ch === "’" || ch === "‘"
         ? "'"
         : ch === "“" || ch === "”"
