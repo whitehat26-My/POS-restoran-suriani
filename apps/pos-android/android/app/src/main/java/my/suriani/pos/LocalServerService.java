@@ -38,7 +38,7 @@ public class LocalServerService extends android.app.Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String address = intent == null ? null : intent.getStringExtra(EXTRA_ADDRESS);
-        startForeground(NOTIFICATION_ID, buildNotification(address));
+        startInForeground(NOTIFICATION_ID, buildNotification(address));
         holdWifi();
         // Restarted with the last intent if Android reclaims the process, so
         // the door reopens by itself after a low-memory kill.
@@ -110,12 +110,16 @@ public class LocalServerService extends android.app.Service {
     /**
      * Android 14 requires a service type at startForeground time as well as in
      * the manifest, and rejects the call outright without one.
+     *
+     * Not named `startForeground`: Service declares that method final, so a
+     * same-signature helper is an illegal override rather than a shadow, and
+     * the build fails on it.
      */
-    private void startForeground(int id, Notification notification) {
+    private void startInForeground(int id, Notification notification) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            super.startForeground(id, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+            startForeground(id, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         } else {
-            super.startForeground(id, notification);
+            startForeground(id, notification);
         }
     }
 }

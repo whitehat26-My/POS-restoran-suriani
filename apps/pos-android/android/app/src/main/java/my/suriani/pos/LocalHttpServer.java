@@ -1,7 +1,6 @@
 package my.suriani.pos;
 
 import android.content.Context;
-import android.content.res.AssetManager;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
@@ -217,17 +216,23 @@ public class LocalHttpServer {
             return;
         }
 
-        AssetManager assets = context.getAssets();
-        try (InputStream stream = assets.open(ASSET_ROOT + "/" + name)) {
+        // Read first, write second. Folding both into one try would report a
+        // phone that walked out of range mid-download as a missing file, and
+        // then try to explain that down the socket that just broke.
+        byte[] body;
+        try (InputStream stream = context.getAssets().open(ASSET_ROOT + "/" + name)) {
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
             byte[] chunk = new byte[8192];
             int read;
             while ((read = stream.read(chunk)) != -1) buffer.write(chunk, 0, read);
-            write(out, 200, contentTypeOf(name), buffer.toByteArray());
+            body = buffer.toByteArray();
         } catch (IOException notThere) {
             write(out, 404, "application/json",
                 "{\"error\":\"not found\"}".getBytes(StandardCharsets.UTF_8));
+            return;
         }
+
+        write(out, 200, contentTypeOf(name), body);
     }
 
     private static String contentTypeOf(String name) {
