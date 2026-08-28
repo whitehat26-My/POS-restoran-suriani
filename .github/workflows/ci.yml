@@ -35,6 +35,13 @@ jobs:
       - name: Guard tenant isolation boundary
         run: pnpm --filter @suriani/api guard
 
+      # The Phase 0 prototype carries its own copy of the menu and is the
+      # first thing anyone opens, because it is the only file that works by
+      # double-clicking. A stale one is worse than none, so it is generated
+      # from seed-data.ts and CI refuses a drifted copy.
+      - name: Prototype menu is in step with the real one
+        run: node --experimental-strip-types scripts/sync-prototype-menu.mjs --check
+
       # Builds both web apps (each runs its own tsc) and assembles the
       # Worker's assets directory, so tests run against the real thing.
       - name: Build web apps

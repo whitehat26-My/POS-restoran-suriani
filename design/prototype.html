@@ -530,12 +530,13 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 </style>
 
 <div class="frozen-note">
-  <strong>Phase 0 design record — frozen.</strong>
-  This is the mock-up that was approved before any product code, kept as the
-  record of the approved look. It carries its own hardcoded menu and does
-  <em>not</em> update: the real customer app lives in
-  <code>apps/menu/</code> and is served at <code>/t/&lt;outlet&gt;/&lt;token&gt;</code>,
-  the real till at <code>/pos/</code>. Run <code>pnpm dev</code> to see them.
+  <strong>Design prototype — the real menu, a pretend restaurant.</strong>
+  All three surfaces on one page, wired to each other: order on the phone and
+  it appears on the counter and prints a kitchen slip. The menu is generated
+  from the same file the live system serves, so the dishes and prices here are
+  the real ones. Everything else is make-believe — no server, no database, and
+  the orders vanish when you reload. The working system is
+  <code>apps/menu/</code> and <code>apps/pos/</code>; run <code>pnpm dev</code>.
 </div>
 
 <div class="shell">
@@ -878,48 +879,176 @@ const ART = {
    Menu — prices are integer sen, exactly as the database will
    store them. Never a floating point number.
    ============================================================ */
+/* <<< GENERATED MENU — node scripts/sync-prototype-menu.mjs >>> */
+/* Generated from apps/api/src/seed-data.ts — the same menu the real app
+   serves. Do not hand-edit; run the script. */
 const CATS = [
-  { id: "nasi",   ms: "Nasi",          en: "Rice" },
-  { id: "mee",    ms: "Mee & Roti",    en: "Noodles & Roti" },
-  { id: "minum",  ms: "Minuman",       en: "Drinks" },
-  { id: "manis",  ms: "Pencuci Mulut", en: "Desserts" }
+  { id: "cat_hainan", ms: "Nasi Ayam Hainan", en: "Hainanese Chicken Rice" },
+  { id: "cat_nasilemak", ms: "Nasi Lemak", en: "Nasi Lemak" },
+  { id: "cat_setnasi", ms: "Set Nasi Putih", en: "White Rice Sets" },
+  { id: "cat_mee", ms: "Mee / Kuetiau / Bihun / Maggi", en: "Noodles" },
+  { id: "cat_nasigoreng", ms: "Nasi Goreng", en: "Fried Rice" },
+  { id: "cat_western", ms: "Western Food", en: "Western Food" },
+  { id: "cat_pasta", ms: "Pasta", en: "Pasta" },
+  { id: "cat_side", ms: "Side Dish", en: "Side Dishes" },
+  { id: "cat_indo", ms: "Indonesian Food", en: "Indonesian Food" },
+  { id: "cat_sarapan", ms: "Sarapan", en: "Breakfast" },
+  { id: "cat_tambahan", ms: "Set Tambahan", en: "Extras" },
+  { id: "cat_roti", ms: "Roti", en: "Roti" },
+  { id: "cat_burger", ms: "Burger", en: "Burger" },
+  { id: "cat_minum", ms: "Minuman", en: "Drinks" }
 ];
 
 const MENU = [
-  { id:"m1", cat:"nasi",  art:"nasilemak",  sen:1200, prep:12,
-    ms:"Nasi Lemak Ayam Berempah", en:"Nasi Lemak with Spiced Chicken",
-    dms:"Nasi santan, sambal tumis, telur, ikan bilis", den:"Coconut rice, sambal, egg, anchovies",
-    tags:["best","hot","halal"] },
-  { id:"m2", cat:"nasi",  art:"nasigoreng", sen:950, prep:10,
-    ms:"Nasi Goreng Kampung", en:"Kampung Fried Rice",
-    dms:"Ikan bilis, kangkung, cili padi", den:"Anchovies, water spinach, bird's eye chilli",
-    tags:["hot","halal"] },
-  { id:"m3", cat:"mee",   art:"meegoreng",  sen:850, prep:9,
-    ms:"Mee Goreng Mamak", en:"Mamak Fried Noodles",
-    dms:"Mee kuning, tauhu, telur, kobis", den:"Yellow noodles, tofu, egg, cabbage",
-    tags:["best","halal"] },
-  { id:"m4", cat:"mee",   art:"roti",       sen:400, prep:6,
-    ms:"Roti Canai Telur", en:"Roti Canai with Egg",
-    dms:"Dihidang dengan dhal dan sambal", den:"Served with dhal and sambal",
-    tags:["halal"] },
-  { id:"m5", cat:"nasi",  art:"ayam",       sen:750, prep:14,
-    ms:"Ayam Goreng Berempah", en:"Spiced Fried Chicken",
-    dms:"Dua ketul, rempah rumah", den:"Two pieces, house spice blend",
-    tags:["best","halal"] },
-  { id:"m6", cat:"minum", art:"tehtarik",   sen:300, prep:3,
-    ms:"Teh Tarik", en:"Teh Tarik",
-    dms:"Panas atau ais", den:"Hot or iced", tags:["best"] },
-  { id:"m7", cat:"minum", art:"kopi",       sen:320, prep:3,
-    ms:"Kopi O Ais", en:"Iced Black Coffee",
-    dms:"Kopi kaw, gula asing", den:"Strong brew, sugar on the side", tags:[] },
-  { id:"m8", cat:"minum", art:"milo",       sen:400, prep:3,
-    ms:"Milo Ais", en:"Iced Milo",
-    dms:"Dengan serbuk di atas", den:"With powder on top", tags:[] },
-  { id:"m9", cat:"manis", art:"cendol",     sen:650, prep:5,
-    ms:"Cendol Pulut", en:"Cendol with Glutinous Rice",
-    dms:"Gula melaka, santan pekat", den:"Palm sugar, thick coconut milk",
-    tags:[], out:true }
+  { id: "itm_hainan_steam", cat: "cat_hainan", art: "ayam", sen: 800, prep: 10, ms: "Nasi Ayam Hainan Steam", en: "Hainanese Chicken Rice, Steamed", tags: ["best"] },
+  { id: "itm_hainan_roasted", cat: "cat_hainan", art: "ayam", sen: 900, prep: 10, ms: "Nasi Ayam Hainan Roasted", en: "Hainanese Chicken Rice, Roasted", tags: [] },
+  { id: "itm_hainan_bbq", cat: "cat_hainan", art: "ayam", sen: 1000, prep: 10, ms: "Nasi Ayam Hainan BBQ", en: "Hainanese Chicken Rice, BBQ", tags: [] },
+  { id: "itm_hainan_mix", cat: "cat_hainan", art: "ayam", sen: 1600, prep: 10, ms: "Nasi Ayam Hainan Mix", en: "Hainanese Chicken Rice, Mixed", tags: [] },
+  { id: "itm_hainan_taugeh", cat: "cat_hainan", art: "ayam", sen: 500, prep: 10, ms: "Taugeh", en: "Bean Sprout", tags: [] },
+  { id: "itm_hainan_nasitambah", cat: "cat_hainan", art: "ayam", sen: 250, prep: 10, ms: "Nasi Tambah", en: "Extra Rice", tags: [] },
+  { id: "itm_nl_biasa", cat: "cat_nasilemak", art: "nasilemak", sen: 600, prep: 8, ms: "Nasi Lemak Biasa", en: "Nasi Lemak, Plain", tags: ["best"] },
+  { id: "itm_nl_telurmata", cat: "cat_nasilemak", art: "nasilemak", sen: 600, prep: 8, ms: "Nasi Lemak Telur Mata", en: "Nasi Lemak with Fried Egg", tags: [] },
+  { id: "itm_nl_ayamgoreng", cat: "cat_nasilemak", art: "nasilemak", sen: 900, prep: 8, ms: "Nasi Lemak Ayam Goreng", en: "Nasi Lemak with Fried Chicken", tags: ["best"] },
+  { id: "itm_nl_ayamrendang", cat: "cat_nasilemak", art: "nasilemak", sen: 1000, prep: 8, ms: "Nasi Lemak Ayam Rendang", en: "Nasi Lemak with Chicken Rendang", tags: [] },
+  { id: "itm_nl_dagingrendang", cat: "cat_nasilemak", art: "nasilemak", sen: 1000, prep: 8, ms: "Nasi Lemak Daging Rendang", en: "Nasi Lemak with Beef Rendang", tags: [] },
+  { id: "itm_nl_sambalparu", cat: "cat_nasilemak", art: "nasilemak", sen: 800, prep: 8, ms: "Nasi Lemak Sambal Paru", en: "Nasi Lemak with Sambal Beef Lung", tags: ["hot"] },
+  { id: "itm_nl_sambalsotong", cat: "cat_nasilemak", art: "nasilemak", sen: 800, prep: 8, ms: "Nasi Lemak Sambal Sotong", en: "Nasi Lemak with Sambal Squid", tags: ["hot"] },
+  { id: "itm_nl_udangpetai", cat: "cat_nasilemak", art: "nasilemak", sen: 900, prep: 8, ms: "Nasi Lemak Udang Petai", en: "Nasi Lemak with Prawn & Petai", tags: ["hot"] },
+  { id: "itm_set_ayammasakmerah", cat: "cat_setnasi", art: "nasigoreng", sen: 1100, prep: 15, ms: "Set Nasi Putih Ayam Masak Merah", en: "White Rice Set, Chicken Masak Merah", tags: [] },
+  { id: "itm_set_dagingmasakmerah", cat: "cat_setnasi", art: "nasigoreng", sen: 1200, prep: 15, ms: "Set Nasi Putih Daging Masak Merah", en: "White Rice Set, Beef Masak Merah", tags: [] },
+  { id: "itm_set_seafoodmasakmerah", cat: "cat_setnasi", art: "nasigoreng", sen: 1300, prep: 15, ms: "Set Nasi Putih Seafood Masak Merah", en: "White Rice Set, Seafood Masak Merah", tags: [] },
+  { id: "itm_set_ayampaprik", cat: "cat_setnasi", art: "nasigoreng", sen: 1100, prep: 15, ms: "Set Nasi Putih Ayam Paprik", en: "White Rice Set, Chicken Paprik", tags: ["hot"] },
+  { id: "itm_set_seafoodpaprik", cat: "cat_setnasi", art: "nasigoreng", sen: 1300, prep: 15, ms: "Set Nasi Putih Seafood Paprik", en: "White Rice Set, Seafood Paprik", tags: ["hot"] },
+  { id: "itm_set_paprikcampur", cat: "cat_setnasi", art: "nasigoreng", sen: 1300, prep: 15, ms: "Set Nasi Putih Paprik Campur", en: "White Rice Set, Mixed Paprik", tags: ["hot"] },
+  { id: "itm_set_dagingkuhit", cat: "cat_setnasi", art: "nasigoreng", sen: 1000, prep: 15, ms: "Set Nasi Putih Daging Goreng Ku Hit", en: "White Rice Set, Beef Ku Hit", tags: [] },
+  { id: "itm_set_tomyamayam", cat: "cat_setnasi", art: "nasigoreng", sen: 1100, prep: 15, ms: "Set Nasi Putih Tomyam Ayam", en: "White Rice Set, Chicken Tomyam", tags: ["hot"] },
+  { id: "itm_set_tomyamdaging", cat: "cat_setnasi", art: "nasigoreng", sen: 1200, prep: 15, ms: "Set Nasi Putih Tomyam Daging", en: "White Rice Set, Beef Tomyam", tags: ["hot"] },
+  { id: "itm_set_tomyamcampur", cat: "cat_setnasi", art: "nasigoreng", sen: 1300, prep: 15, ms: "Set Nasi Putih Tomyam Campur", en: "White Rice Set, Mixed Tomyam", tags: ["hot"] },
+  { id: "itm_set_tomyamseafood", cat: "cat_setnasi", art: "nasigoreng", sen: 1300, prep: 15, ms: "Set Nasi Putih Tomyam Seafood", en: "White Rice Set, Seafood Tomyam", tags: ["hot"] },
+  { id: "itm_set_suptulang", cat: "cat_setnasi", art: "nasigoreng", sen: 1400, prep: 15, ms: "Set Nasi Putih Sup Tulang", en: "White Rice Set, Bone Soup", tags: [] },
+  { id: "itm_set_supayam", cat: "cat_setnasi", art: "nasigoreng", sen: 1000, prep: 15, ms: "Set Nasi Putih Sup Ayam", en: "White Rice Set, Chicken Soup", tags: [] },
+  { id: "itm_set_supdaging", cat: "cat_setnasi", art: "nasigoreng", sen: 1200, prep: 15, ms: "Set Nasi Putih Sup Daging", en: "White Rice Set, Beef Soup", tags: [] },
+  { id: "itm_set_supseafood", cat: "cat_setnasi", art: "nasigoreng", sen: 1300, prep: 15, ms: "Set Nasi Putih Sup Seafood", en: "White Rice Set, Seafood Soup", tags: [] },
+  { id: "itm_set_supsayur", cat: "cat_setnasi", art: "nasigoreng", sen: 1000, prep: 15, ms: "Set Nasi Putih Sup Sayur", en: "White Rice Set, Vegetable Soup", tags: [] },
+  { id: "itm_mee_biasa", cat: "cat_mee", art: "meegoreng", sen: 900, prep: 10, ms: "Mee Biasa", en: "Noodles, Plain", tags: [], groups: [{"ms":"Pilih mee","en":"Choose your noodle","min":1,"max":1,"options":[{"ms":"Mee","en":"Yellow noodles","sen":0},{"ms":"Kuetiau","en":"Kuetiau","sen":0},{"ms":"Bihun","en":"Bihun","sen":0},{"ms":"Maggi","en":"Maggi","sen":0}]},{"ms":"Goreng atau sup?","en":"Fried or soup?","min":1,"max":1,"options":[{"ms":"Goreng","en":"Fried","sen":0},{"ms":"Sup","en":"Soup","sen":0}]}] },
+  { id: "itm_mee_bandung", cat: "cat_mee", art: "meegoreng", sen: 900, prep: 10, ms: "Mee Bandung", en: "Mee Bandung", tags: [], groups: [{"ms":"Pilih mee","en":"Choose your noodle","min":1,"max":1,"options":[{"ms":"Mee","en":"Yellow noodles","sen":0},{"ms":"Kuetiau","en":"Kuetiau","sen":0},{"ms":"Bihun","en":"Bihun","sen":0},{"ms":"Maggi","en":"Maggi","sen":0}]},{"ms":"Goreng atau sup?","en":"Fried or soup?","min":1,"max":1,"options":[{"ms":"Goreng","en":"Fried","sen":0},{"ms":"Sup","en":"Soup","sen":0}]}] },
+  { id: "itm_mee_kungfu", cat: "cat_mee", art: "meegoreng", sen: 1000, prep: 10, ms: "Mee Kungfu", en: "Kungfu Noodles", tags: ["best"], groups: [{"ms":"Pilih mee","en":"Choose your noodle","min":1,"max":1,"options":[{"ms":"Mee","en":"Yellow noodles","sen":0},{"ms":"Kuetiau","en":"Kuetiau","sen":0},{"ms":"Bihun","en":"Bihun","sen":0},{"ms":"Maggi","en":"Maggi","sen":0}]},{"ms":"Goreng atau sup?","en":"Fried or soup?","min":1,"max":1,"options":[{"ms":"Goreng","en":"Fried","sen":0},{"ms":"Sup","en":"Soup","sen":0}]}] },
+  { id: "itm_mee_seafoodkungfu", cat: "cat_mee", art: "meegoreng", sen: 1200, prep: 10, ms: "Mee Seafood Kungfu", en: "Seafood Kungfu Noodles", tags: [], groups: [{"ms":"Pilih mee","en":"Choose your noodle","min":1,"max":1,"options":[{"ms":"Mee","en":"Yellow noodles","sen":0},{"ms":"Kuetiau","en":"Kuetiau","sen":0},{"ms":"Bihun","en":"Bihun","sen":0},{"ms":"Maggi","en":"Maggi","sen":0}]},{"ms":"Goreng atau sup?","en":"Fried or soup?","min":1,"max":1,"options":[{"ms":"Goreng","en":"Fried","sen":0},{"ms":"Sup","en":"Soup","sen":0}]}] },
+  { id: "itm_mee_tomyamthai", cat: "cat_mee", art: "meegoreng", sen: 900, prep: 10, ms: "Mee Tomyam Thai", en: "Thai Tomyam Noodles", tags: ["hot"], groups: [{"ms":"Pilih mee","en":"Choose your noodle","min":1,"max":1,"options":[{"ms":"Mee","en":"Yellow noodles","sen":0},{"ms":"Kuetiau","en":"Kuetiau","sen":0},{"ms":"Bihun","en":"Bihun","sen":0},{"ms":"Maggi","en":"Maggi","sen":0}]},{"ms":"Goreng atau sup?","en":"Fried or soup?","min":1,"max":1,"options":[{"ms":"Goreng","en":"Fried","sen":0},{"ms":"Sup","en":"Soup","sen":0}]}] },
+  { id: "itm_mee_tomyamthaiseafood", cat: "cat_mee", art: "meegoreng", sen: 1200, prep: 10, ms: "Mee Tomyam Thai Seafood", en: "Thai Tomyam Seafood Noodles", tags: ["hot"], groups: [{"ms":"Pilih mee","en":"Choose your noodle","min":1,"max":1,"options":[{"ms":"Mee","en":"Yellow noodles","sen":0},{"ms":"Kuetiau","en":"Kuetiau","sen":0},{"ms":"Bihun","en":"Bihun","sen":0},{"ms":"Maggi","en":"Maggi","sen":0}]},{"ms":"Goreng atau sup?","en":"Fried or soup?","min":1,"max":1,"options":[{"ms":"Goreng","en":"Fried","sen":0},{"ms":"Sup","en":"Soup","sen":0}]}] },
+  { id: "itm_mee_singapore", cat: "cat_mee", art: "meegoreng", sen: 800, prep: 10, ms: "Mee Singapore", en: "Singapore Noodles", tags: [], groups: [{"ms":"Pilih mee","en":"Choose your noodle","min":1,"max":1,"options":[{"ms":"Mee","en":"Yellow noodles","sen":0},{"ms":"Kuetiau","en":"Kuetiau","sen":0},{"ms":"Bihun","en":"Bihun","sen":0},{"ms":"Maggi","en":"Maggi","sen":0}]},{"ms":"Goreng atau sup?","en":"Fried or soup?","min":1,"max":1,"options":[{"ms":"Goreng","en":"Fried","sen":0},{"ms":"Sup","en":"Soup","sen":0}]}] },
+  { id: "itm_mee_ladnaayam", cat: "cat_mee", art: "meegoreng", sen: 900, prep: 10, ms: "Mee Ladna Ayam", en: "Chicken Ladna Noodles", tags: [], groups: [{"ms":"Pilih mee","en":"Choose your noodle","min":1,"max":1,"options":[{"ms":"Mee","en":"Yellow noodles","sen":0},{"ms":"Kuetiau","en":"Kuetiau","sen":0},{"ms":"Bihun","en":"Bihun","sen":0},{"ms":"Maggi","en":"Maggi","sen":0}]},{"ms":"Goreng atau sup?","en":"Fried or soup?","min":1,"max":1,"options":[{"ms":"Goreng","en":"Fried","sen":0},{"ms":"Sup","en":"Soup","sen":0}]}] },
+  { id: "itm_mee_ladnaseafood", cat: "cat_mee", art: "meegoreng", sen: 1200, prep: 10, ms: "Mee Ladna Seafood", en: "Seafood Ladna Noodles", tags: [], groups: [{"ms":"Pilih mee","en":"Choose your noodle","min":1,"max":1,"options":[{"ms":"Mee","en":"Yellow noodles","sen":0},{"ms":"Kuetiau","en":"Kuetiau","sen":0},{"ms":"Bihun","en":"Bihun","sen":0},{"ms":"Maggi","en":"Maggi","sen":0}]},{"ms":"Goreng atau sup?","en":"Fried or soup?","min":1,"max":1,"options":[{"ms":"Goreng","en":"Fried","sen":0},{"ms":"Sup","en":"Soup","sen":0}]}] },
+  { id: "itm_ng_biasa", cat: "cat_nasigoreng", art: "nasigoreng", sen: 800, prep: 10, ms: "Nasi Goreng Biasa", en: "Fried Rice, Plain", tags: [] },
+  { id: "itm_ng_seafood", cat: "cat_nasigoreng", art: "nasigoreng", sen: 1200, prep: 10, ms: "Nasi Goreng Seafood", en: "Seafood Fried Rice", tags: [] },
+  { id: "itm_ng_kampung", cat: "cat_nasigoreng", art: "nasigoreng", sen: 800, prep: 10, ms: "Nasi Goreng Kampung", en: "Kampung Fried Rice", tags: ["best","hot"] },
+  { id: "itm_ng_belacan", cat: "cat_nasigoreng", art: "nasigoreng", sen: 800, prep: 10, ms: "Nasi Goreng Belacan", en: "Belacan Fried Rice", tags: ["hot"] },
+  { id: "itm_ng_cilipadi", cat: "cat_nasigoreng", art: "nasigoreng", sen: 800, prep: 10, ms: "Nasi Goreng Cili Padi", en: "Bird's Eye Chilli Fried Rice", tags: ["hot"] },
+  { id: "itm_ng_ayamgoreng", cat: "cat_nasigoreng", art: "nasigoreng", sen: 1000, prep: 10, ms: "Nasi Goreng Ayam Goreng", en: "Fried Rice with Fried Chicken", tags: [] },
+  { id: "itm_ng_ikanmasin", cat: "cat_nasigoreng", art: "nasigoreng", sen: 900, prep: 10, ms: "Nasi Goreng Ikan Masin", en: "Salted Fish Fried Rice", tags: [] },
+  { id: "itm_ng_sardin", cat: "cat_nasigoreng", art: "nasigoreng", sen: 900, prep: 10, ms: "Nasi Goreng Sardin", en: "Sardine Fried Rice", tags: [] },
+  { id: "itm_ng_pattaya", cat: "cat_nasigoreng", art: "nasigoreng", sen: 900, prep: 10, ms: "Nasi Goreng Pattaya", en: "Pattaya Fried Rice", tags: [] },
+  { id: "itm_ng_pattayaayam", cat: "cat_nasigoreng", art: "nasigoreng", sen: 1300, prep: 10, ms: "Nasi Goreng Pattaya Ayam Goreng", en: "Pattaya Fried Rice with Fried Chicken", tags: [] },
+  { id: "itm_ng_paprikayam", cat: "cat_nasigoreng", art: "nasigoreng", sen: 1100, prep: 10, ms: "Nasi Goreng Paprik Ayam", en: "Chicken Paprik Fried Rice", tags: ["hot"] },
+  { id: "itm_ng_paprikcampur", cat: "cat_nasigoreng", art: "nasigoreng", sen: 1300, prep: 10, ms: "Nasi Goreng Paprik Campur", en: "Mixed Paprik Fried Rice", tags: ["hot"] },
+  { id: "itm_ng_paprikseafood", cat: "cat_nasigoreng", art: "nasigoreng", sen: 1300, prep: 10, ms: "Nasi Goreng Paprik Seafood", en: "Seafood Paprik Fried Rice", tags: ["hot"] },
+  { id: "itm_ng_paprikdaging", cat: "cat_nasigoreng", art: "nasigoreng", sen: 1200, prep: 10, ms: "Nasi Goreng Paprik Daging", en: "Beef Paprik Fried Rice", tags: ["hot"] },
+  { id: "itm_ng_ayammasakmerah", cat: "cat_nasigoreng", art: "nasigoreng", sen: 1100, prep: 10, ms: "Nasi Goreng Ayam Masak Merah", en: "Fried Rice, Chicken Masak Merah", tags: [] },
+  { id: "itm_ng_dagingmasakmerah", cat: "cat_nasigoreng", art: "nasigoreng", sen: 1200, prep: 10, ms: "Nasi Goreng Daging Masak Merah", en: "Fried Rice, Beef Masak Merah", tags: [] },
+  { id: "itm_ng_seafoodmasakmerah", cat: "cat_nasigoreng", art: "nasigoreng", sen: 1300, prep: 10, ms: "Nasi Goreng Seafood Masak Merah", en: "Fried Rice, Seafood Masak Merah", tags: [] },
+  { id: "itm_ng_ayamkunyit", cat: "cat_nasigoreng", art: "nasigoreng", sen: 1000, prep: 10, ms: "Nasi Goreng Ayam Goreng Kunyit", en: "Fried Rice with Turmeric Chicken", tags: [] },
+  { id: "itm_ng_usaayam", cat: "cat_nasigoreng", art: "nasigoreng", sen: 1200, prep: 10, ms: "Nasi Goreng USA Ayam", en: "USA Chicken Fried Rice", tags: [] },
+  { id: "itm_ng_usadaging", cat: "cat_nasigoreng", art: "nasigoreng", sen: 1300, prep: 10, ms: "Nasi Goreng USA Daging", en: "USA Beef Fried Rice", tags: [] },
+  { id: "itm_ng_daging", cat: "cat_nasigoreng", art: "nasigoreng", sen: 1100, prep: 10, ms: "Nasi Goreng Daging", en: "Beef Fried Rice", tags: [] },
+  { id: "itm_ng_tomyamthai", cat: "cat_nasigoreng", art: "nasigoreng", sen: 900, prep: 10, ms: "Nasi Goreng Tomyam Thai", en: "Thai Tomyam Fried Rice", tags: ["hot"] },
+  { id: "itm_ng_cendawan", cat: "cat_nasigoreng", art: "nasigoreng", sen: 900, prep: 10, ms: "Nasi Goreng Cendawan", en: "Mushroom Fried Rice", tags: [] },
+  { id: "itm_ng_kerabu", cat: "cat_nasigoreng", art: "nasigoreng", sen: 900, prep: 10, ms: "Nasi Goreng Kerabu", en: "Kerabu Fried Rice", tags: [] },
+  { id: "itm_ng_cina", cat: "cat_nasigoreng", art: "nasigoreng", sen: 900, prep: 10, ms: "Nasi Goreng Cina", en: "Chinese Fried Rice", tags: [] },
+  { id: "itm_ng_vegetarian", cat: "cat_nasigoreng", art: "nasigoreng", sen: 700, prep: 10, ms: "Nasi Goreng Vegetarian", en: "Vegetarian Fried Rice", tags: [] },
+  { id: "itm_west_chickenchop", cat: "cat_western", art: "ayam", sen: 1390, prep: 18, ms: "Chicken Chop", en: "Chicken Chop", tags: ["best"] },
+  { id: "itm_west_chickengrill", cat: "cat_western", art: "ayam", sen: 1390, prep: 18, ms: "Chicken Grill", en: "Grilled Chicken", tags: [] },
+  { id: "itm_west_beefsteak", cat: "cat_western", art: "ayam", sen: 1590, prep: 18, ms: "Beef Steak", en: "Beef Steak", tags: [] },
+  { id: "itm_west_lambchop", cat: "cat_western", art: "ayam", sen: 1690, prep: 18, ms: "Lamb Chop", en: "Lamb Chop", tags: [] },
+  { id: "itm_west_mixedsteak", cat: "cat_western", art: "ayam", sen: 1990, prep: 18, ms: "Mixed Steak (Chicken & Beef)", en: "Mixed Steak (Chicken & Beef)", tags: [] },
+  { id: "itm_west_fishandchip", cat: "cat_western", art: "ayam", sen: 1590, prep: 18, ms: "Fish and Chip", en: "Fish and Chips", tags: [] },
+  { id: "itm_pasta_aglio", cat: "cat_pasta", art: "meegoreng", sen: 1090, prep: 15, ms: "Aglio e Olio", en: "Aglio e Olio", tags: [] },
+  { id: "itm_pasta_beefaglio", cat: "cat_pasta", art: "meegoreng", sen: 1290, prep: 15, ms: "Beef Aglio e Olio", en: "Beef Aglio e Olio", tags: [] },
+  { id: "itm_pasta_seafoodaglio", cat: "cat_pasta", art: "meegoreng", sen: 1490, prep: 15, ms: "Seafood Aglio e Olio", en: "Seafood Aglio e Olio", tags: [] },
+  { id: "itm_pasta_chickengrillaglio", cat: "cat_pasta", art: "meegoreng", sen: 1890, prep: 15, ms: "Chicken Grill Aglio e Olio", en: "Grilled Chicken Aglio e Olio", tags: [] },
+  { id: "itm_pasta_beefbolognese", cat: "cat_pasta", art: "meegoreng", sen: 1390, prep: 15, ms: "Beef Bolognese", en: "Beef Bolognese", tags: [] },
+  { id: "itm_pasta_chickenbolognese", cat: "cat_pasta", art: "meegoreng", sen: 1290, prep: 15, ms: "Chicken Bolognese", en: "Chicken Bolognese", tags: [] },
+  { id: "itm_pasta_carbonara", cat: "cat_pasta", art: "meegoreng", sen: 1190, prep: 15, ms: "Carbonara", en: "Carbonara", tags: [] },
+  { id: "itm_pasta_beefcarbonara", cat: "cat_pasta", art: "meegoreng", sen: 1390, prep: 15, ms: "Beef Carbonara", en: "Beef Carbonara", tags: [] },
+  { id: "itm_pasta_chickengrillcarbonara", cat: "cat_pasta", art: "meegoreng", sen: 1890, prep: 15, ms: "Chicken Grill Carbonara", en: "Grilled Chicken Carbonara", tags: [] },
+  { id: "itm_side_mushroom", cat: "cat_side", art: "ayam", sen: 700, prep: 8, ms: "Mushroom", en: "Mushroom", tags: [] },
+  { id: "itm_side_garlicbread", cat: "cat_side", art: "ayam", sen: 400, prep: 8, ms: "Garlic Bread", en: "Garlic Bread", tags: [] },
+  { id: "itm_side_cheesywedges", cat: "cat_side", art: "ayam", sen: 690, prep: 8, ms: "Cheesy Wedges", en: "Cheesy Wedges", tags: [] },
+  { id: "itm_side_chickennugget", cat: "cat_side", art: "ayam", sen: 890, prep: 8, ms: "Chicken Nugget", en: "Chicken Nuggets", tags: [] },
+  { id: "itm_side_frenchfries", cat: "cat_side", art: "ayam", sen: 690, prep: 8, ms: "French Fries", en: "French Fries", tags: [] },
+  { id: "itm_side_jumbosausage", cat: "cat_side", art: "ayam", sen: 890, prep: 8, ms: "Jumbo Sausage", en: "Jumbo Sausage", tags: [] },
+  { id: "itm_side_meatball", cat: "cat_side", art: "ayam", sen: 1190, prep: 8, ms: "Meatball (5 Pieces)", en: "Meatballs (5 Pieces)", tags: [] },
+  { id: "itm_indo_ayampenyet", cat: "cat_indo", art: "nasilemak", sen: 1200, prep: 15, ms: "Set Nasi Ayam Penyet", en: "Ayam Penyet Rice Set", tags: ["best","hot"] },
+  { id: "itm_indo_lelepenyet", cat: "cat_indo", art: "nasilemak", sen: 1200, prep: 15, ms: "Set Nasi Lele Penyet", en: "Lele Penyet Rice Set", tags: ["hot"] },
+  { id: "itm_indo_dagingpenyet", cat: "cat_indo", art: "nasilemak", sen: 1300, prep: 15, ms: "Set Nasi Daging Penyet", en: "Beef Penyet Rice Set", tags: ["hot"] },
+  { id: "itm_indo_tauhupenyet", cat: "cat_indo", art: "nasilemak", sen: 800, prep: 15, ms: "Set Tauhu Penyet", en: "Tauhu Penyet Set", tags: ["hot"] },
+  { id: "itm_indo_bakso", cat: "cat_indo", art: "nasilemak", sen: 1000, prep: 15, ms: "Bakso", en: "Bakso", tags: [] },
+  { id: "itm_indo_soto", cat: "cat_indo", art: "nasilemak", sen: 1000, prep: 15, ms: "Soto", en: "Soto", tags: [] },
+  { id: "itm_sarapan_telurseparuh", cat: "cat_sarapan", art: "roti", sen: 400, prep: 6, ms: "Telur Separuh Masak (2 Biji)", en: "Soft-Boiled Eggs (2)", tags: [] },
+  { id: "itm_sarapan_rotibakar", cat: "cat_sarapan", art: "roti", sen: 300, prep: 6, ms: "Roti Bakar", en: "Toast", tags: [] },
+  { id: "itm_sarapan_goreng", cat: "cat_sarapan", art: "roti", sen: 400, prep: 6, ms: "Mee / Kuetiau / Nasi / Bihun Goreng", en: "Fried Noodles or Rice", tags: [] },
+  { id: "itm_sarapan_lontong", cat: "cat_sarapan", art: "roti", sen: 900, prep: 6, ms: "Lontong", en: "Lontong", tags: [] },
+  { id: "itm_sarapan_nasiimpit", cat: "cat_sarapan", art: "roti", sen: 800, prep: 6, ms: "Nasi Impit dan Kuah", en: "Rice Cakes with Curry", tags: [] },
+  { id: "itm_tmb_kangkungbelacan", cat: "cat_tambahan", art: "ayam", sen: 700, prep: 8, ms: "Kangkung Belacan", en: "Water Spinach with Belacan", tags: ["hot"] },
+  { id: "itm_tmb_kailanikanmasin", cat: "cat_tambahan", art: "ayam", sen: 800, prep: 8, ms: "Kailan Ikan Masin", en: "Kailan with Salted Fish", tags: [] },
+  { id: "itm_tmb_sayurcampur", cat: "cat_tambahan", art: "ayam", sen: 800, prep: 8, ms: "Sayur Campur", en: "Mixed Vegetables", tags: [] },
+  { id: "itm_tmb_telurbungkus", cat: "cat_tambahan", art: "ayam", sen: 800, prep: 8, ms: "Telur Bungkus", en: "Omelette Parcel", tags: [] },
+  { id: "itm_tmb_telurbistik", cat: "cat_tambahan", art: "ayam", sen: 800, prep: 8, ms: "Telur Bistik", en: "Telur Bistik", tags: [] },
+  { id: "itm_tmb_telurdadar", cat: "cat_tambahan", art: "ayam", sen: 300, prep: 8, ms: "Telur Dadar", en: "Omelette", tags: [] },
+  { id: "itm_tmb_telurmata", cat: "cat_tambahan", art: "ayam", sen: 200, prep: 8, ms: "Telur Mata", en: "Fried Egg", tags: [] },
+  { id: "itm_roti_kosong", cat: "cat_roti", art: "roti", sen: 180, prep: 6, ms: "Roti Kosong", en: "Roti Canai, Plain", tags: ["best"] },
+  { id: "itm_roti_telur", cat: "cat_roti", art: "roti", sen: 300, prep: 6, ms: "Roti Telur", en: "Roti Canai with Egg", tags: [] },
+  { id: "itm_roti_telurcili", cat: "cat_roti", art: "roti", sen: 350, prep: 6, ms: "Roti Telur Cili", en: "Roti Canai with Egg & Chilli", tags: ["hot"] },
+  { id: "itm_roti_telurbawang", cat: "cat_roti", art: "roti", sen: 350, prep: 6, ms: "Roti Telur Bawang", en: "Roti Canai with Egg & Onion", tags: [] },
+  { id: "itm_roti_telurcilibawang", cat: "cat_roti", art: "roti", sen: 400, prep: 6, ms: "Roti Telur Cili Bawang", en: "Roti Canai with Egg, Chilli & Onion", tags: ["hot"] },
+  { id: "itm_roti_telurplanta", cat: "cat_roti", art: "roti", sen: 400, prep: 6, ms: "Roti Telur Planta", en: "Roti Canai with Egg & Margarine", tags: [] },
+  { id: "itm_roti_telurdouble", cat: "cat_roti", art: "roti", sen: 600, prep: 6, ms: "Roti Telur Double", en: "Roti Canai with Double Egg", tags: [] },
+  { id: "itm_roti_bawang", cat: "cat_roti", art: "roti", sen: 250, prep: 6, ms: "Roti Bawang", en: "Roti Canai with Onion", tags: [] },
+  { id: "itm_roti_bom", cat: "cat_roti", art: "roti", sen: 250, prep: 6, ms: "Roti Bom", en: "Roti Bom", tags: [] },
+  { id: "itm_roti_pisang", cat: "cat_roti", art: "roti", sen: 350, prep: 6, ms: "Roti Pisang", en: "Roti Canai with Banana", tags: [] },
+  { id: "itm_roti_milo", cat: "cat_roti", art: "roti", sen: 350, prep: 6, ms: "Roti Milo", en: "Roti Canai with Milo", tags: [] },
+  { id: "itm_roti_kaya", cat: "cat_roti", art: "roti", sen: 300, prep: 6, ms: "Roti Kaya", en: "Roti Canai with Kaya", tags: [] },
+  { id: "itm_roti_susu", cat: "cat_roti", art: "roti", sen: 300, prep: 6, ms: "Roti Susu", en: "Roti Canai with Condensed Milk", tags: [] },
+  { id: "itm_roti_tampal", cat: "cat_roti", art: "roti", sen: 300, prep: 6, ms: "Roti Tampal", en: "Roti Tampal", tags: [] },
+  { id: "itm_roti_cheese", cat: "cat_roti", art: "roti", sen: 400, prep: 6, ms: "Roti Cheese", en: "Roti Canai with Cheese", tags: [] },
+  { id: "itm_roti_sarangburung", cat: "cat_roti", art: "roti", sen: 500, prep: 6, ms: "Roti Sarang Burung", en: "Roti Sarang Burung", tags: [] },
+  { id: "itm_roti_jantan", cat: "cat_roti", art: "roti", sen: 450, prep: 6, ms: "Roti Jantan", en: "Roti Jantan", tags: [] },
+  { id: "itm_min_teho", cat: "cat_minum", art: "tehtarik", sen: 200, prep: 3, ms: "Teh O", en: "Black Tea", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_tehtarik", cat: "cat_minum", art: "tehtarik", sen: 250, prep: 3, ms: "Teh Tarik", en: "Teh Tarik", tags: ["best"], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_tehhalia", cat: "cat_minum", art: "tehtarik", sen: 300, prep: 3, ms: "Teh Halia", en: "Ginger Tea", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_tehlimau", cat: "cat_minum", art: "tehtarik", sen: 250, prep: 3, ms: "Teh Limau", en: "Lime Tea", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_tehc", cat: "cat_minum", art: "tehtarik", sen: 250, prep: 3, ms: "Teh C", en: "Teh C", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_sirap", cat: "cat_minum", art: "tehtarik", sen: 200, prep: 3, ms: "Sirap", en: "Rose Syrup", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_siraplimau", cat: "cat_minum", art: "tehtarik", sen: 250, prep: 3, ms: "Sirap Limau", en: "Rose Syrup with Lime", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_bandung", cat: "cat_minum", art: "tehtarik", sen: 300, prep: 3, ms: "Bandung", en: "Bandung", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_kopio", cat: "cat_minum", art: "kopi", sen: 200, prep: 3, ms: "Kopi O", en: "Black Coffee", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_kopisusu", cat: "cat_minum", art: "kopi", sen: 250, prep: 3, ms: "Kopi Susu", en: "Coffee with Milk", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_cam", cat: "cat_minum", art: "kopi", sen: 250, prep: 3, ms: "Cam", en: "Cham", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_susu", cat: "cat_minum", art: "tehtarik", sen: 200, prep: 3, ms: "Susu", en: "Milk", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_horlick", cat: "cat_minum", art: "milo", sen: 300, prep: 3, ms: "Horlick", en: "Horlicks", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_milo", cat: "cat_minum", art: "milo", sen: 300, prep: 3, ms: "Milo", en: "Milo", tags: ["best"], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_nescafeo", cat: "cat_minum", art: "kopi", sen: 250, prep: 3, ms: "Nescafe O", en: "Nescafe O", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_nescafe", cat: "cat_minum", art: "kopi", sen: 300, prep: 3, ms: "Nescafe", en: "Nescafe", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_neslo", cat: "cat_minum", art: "milo", sen: 350, prep: 3, ms: "Neslo", en: "Neslo", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_barli", cat: "cat_minum", art: "tehtarik", sen: 250, prep: 3, ms: "Barli", en: "Barley", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_limau", cat: "cat_minum", art: "tehtarik", sen: 250, prep: 3, ms: "Limau", en: "Lime", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_lemon", cat: "cat_minum", art: "tehtarik", sen: 400, prep: 3, ms: "Lemon", en: "Lemon", tags: [], groups: [{"ms":"Panas, ais atau bungkus?","en":"Hot, iced or takeaway?","min":1,"max":1,"options":[{"ms":"Panas","en":"Hot","sen":0},{"ms":"Ais","en":"Iced","sen":50},{"ms":"Bungkus (panas)","en":"Takeaway (hot)","sen":50},{"ms":"Bungkus (ais)","en":"Takeaway (iced)","sen":50}]}] },
+  { id: "itm_min_milodinasour", cat: "cat_minum", art: "milo", sen: 400, prep: 3, ms: "Milo Dinasour", en: "Milo Dinosaur", tags: [], groups: [{"ms":"Makan sini atau bungkus?","en":"Dine in or takeaway?","min":1,"max":1,"options":[{"ms":"Makan sini","en":"Dine in","sen":0},{"ms":"Bungkus","en":"Takeaway","sen":50}]}] },
+  { id: "itm_min_fruitjuice", cat: "cat_minum", art: "tehtarik", sen: 550, prep: 3, ms: "Fruit Juice", en: "Fruit Juice", tags: [], groups: [{"ms":"Makan sini atau bungkus?","en":"Dine in or takeaway?","min":1,"max":1,"options":[{"ms":"Makan sini","en":"Dine in","sen":0},{"ms":"Bungkus","en":"Takeaway","sen":50}]}] },
+  { id: "itm_min_softdrinks", cat: "cat_minum", art: "tehtarik", sen: 350, prep: 3, ms: "Soft Drinks (Coke, Sprite, dll.)", en: "Soft Drinks (Coke, Sprite, etc.)", tags: [], groups: [{"ms":"Makan sini atau bungkus?","en":"Dine in or takeaway?","min":1,"max":1,"options":[{"ms":"Makan sini","en":"Dine in","sen":0},{"ms":"Bungkus","en":"Takeaway","sen":50}]}] },
+  { id: "itm_min_airsmall", cat: "cat_minum", art: "tehtarik", sen: 150, prep: 3, ms: "Drinking Water (Small)", en: "Drinking Water (Small)", tags: [], groups: [{"ms":"Makan sini atau bungkus?","en":"Dine in or takeaway?","min":1,"max":1,"options":[{"ms":"Makan sini","en":"Dine in","sen":0},{"ms":"Bungkus","en":"Takeaway","sen":50}]}] },
+  { id: "itm_min_airbig", cat: "cat_minum", art: "tehtarik", sen: 250, prep: 3, ms: "Drinking Water (Big)", en: "Drinking Water (Big)", tags: [], groups: [{"ms":"Makan sini atau bungkus?","en":"Dine in or takeaway?","min":1,"max":1,"options":[{"ms":"Makan sini","en":"Dine in","sen":0},{"ms":"Bungkus","en":"Takeaway","sen":50}]}] }
 ];
+/* <<< END GENERATED MENU >>> */
 
 const money = sen => "RM " + (sen / 100).toFixed(2);
 
@@ -928,7 +1057,7 @@ const money = sen => "RM " + (sen / 100).toFixed(2);
    shape the real app uses: orders are append-only facts.
    ============================================================ */
 const state = {
-  cat: "nasi",
+  cat: CATS[0].id,
   cart: {},          // itemId -> qty
   orders: [],        // append-only
   seq: 1841,
@@ -954,6 +1083,23 @@ function renderCats() {
   ).join("");
 }
 
+/* The heading is on screen right above the row, so the row drops it, exactly
+   as the printed card does — "Kampung" under NASI GORENG. The stored name
+   stays whole for the docket and the bill. Mirrors shortLabel() in
+   packages/core. */
+function shortLabel(name, categoryName) {
+  const prefixes = categoryName.split("/").map(p => p.trim()).filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  for (const prefix of prefixes) {
+    if (name.length > prefix.length + 1 &&
+        name.slice(0, prefix.length).toLowerCase() === prefix.toLowerCase() &&
+        name[prefix.length] === " ") {
+      return name.slice(prefix.length + 1);
+    }
+  }
+  return name;
+}
+
 function renderMenu() {
   $("#menuList").innerHTML = MENU.filter(m => m.cat === state.cat).map(m => {
     const tags = [
@@ -963,17 +1109,35 @@ function renderMenu() {
       m.tags.includes("halal") ? `<span class="tag tag-halal">Halal</span>` : ""
     ].join("");
     const q = state.cart[m.id] || 0;
+    const cat = CATS.find(c => c.id === m.cat);
+    const label = shortLabel(m[lang], cat ? cat[lang] : "");
+    // The printed menu carries no dish descriptions, so most items have none;
+    // an empty element still takes its margin and leaves a gap under the name.
+    const desc = lang === "ms" ? m.dms : m.den;
+    const options = m.groups
+      ? `<div class="dish-desc">${m.groups.map(g => g[lang]).join(" · ")}</div>`
+      : "";
     return `<button class="dish" data-add="${m.id}" ${m.out ? "disabled" : ""}>
       <div class="dish-art">${ART[m.art]}</div>
       <div>
-        <div class="dish-name">${m[lang]}${q ? ` <span class="num" style="color:var(--sambal)">×${q}</span>` : ""}</div>
-        <div class="dish-desc">${lang === "ms" ? m.dms : m.den}</div>
+        <div class="dish-name">${label}${q ? ` <span class="num" style="color:var(--sambal)">×${q}</span>` : ""}</div>
+        ${desc ? `<div class="dish-desc">${desc}</div>` : options}
         <div class="dish-foot">
           <span class="dish-price">${money(m.sen)}</span>${tags}
         </div>
       </div>
     </button>`;
   }).join("");
+}
+
+/* A section the owner has not filled yet says so rather than looking broken. */
+function renderEmptyCategory() {
+  if ($("#menuList").innerHTML.trim() === "") {
+    $("#menuList").innerHTML =
+      `<p style="padding:32px 16px;text-align:center;color:var(--muted);font-size:var(--t-sm)">` +
+      (lang === "ms" ? "Belum ada menu dalam kategori ini." : "Nothing in this category yet.") +
+      `</p>`;
+  }
 }
 
 function cartTotals() {
@@ -1082,9 +1246,13 @@ function renderOwner() {
     `<i class="${h === peak ? "peak" : ""}" style="height:${(h / peak) * 100}%"></i>`
   ).join("");
 
+  // A plausible day's top sellers, taken from the menu itself rather than
+  // hardcoded ids — the menu is the thing that changes.
   const top = [
-    { m: "m1", q: 47 }, { m: "m6", q: 41 }, { m: "m3", q: 36 }, { m: "m4", q: 28 }, { m: "m5", q: 22 }
-  ];
+    { m: "itm_nl_biasa", q: 47 }, { m: "itm_min_tehtarik", q: 41 },
+    { m: "itm_roti_kosong", q: 36 }, { m: "itm_ng_kampung", q: 28 },
+    { m: "itm_mee_kungfu", q: 22 }
+  ].filter(r => MENU.some(x => x.id === r.m));
   $("#ranks").innerHTML = top.map((r, i) => {
     const m = MENU.find(x => x.id === r.m);
     return `<div class="rank">
@@ -1111,7 +1279,7 @@ function toast(msg) {
 
 function renderAll() {
   applyI18n();
-  renderCats(); renderMenu(); renderCart(); renderStatus();
+  renderCats(); renderMenu(); renderEmptyCategory(); renderCart(); renderStatus();
   renderFloor(); renderFeed(); renderOwner();
 }
 
@@ -1123,12 +1291,12 @@ document.addEventListener("click", e => {
   if (add) {
     const id = add.dataset.add;
     state.cart[id] = (state.cart[id] || 0) + 1;
-    renderMenu(); renderCart();
+    renderMenu(); renderEmptyCategory(); renderCart();
     return;
   }
 
   const cat = e.target.closest("[data-cat]");
-  if (cat) { state.cat = cat.dataset.cat; renderCats(); renderMenu(); return; }
+  if (cat) { state.cat = cat.dataset.cat; renderCats(); renderMenu(); renderEmptyCategory(); return; }
 
   const surf = e.target.closest("[data-surface]");
   if (surf) {
@@ -1176,7 +1344,7 @@ $("#placeBtn").addEventListener("click", () => {
   const tb = state.tables.find(x => x.c === "M05");
   tb.s = "ordering"; tb.m = "…";
 
-  renderMenu(); renderCart(); renderStatus(); renderFloor(); renderFeed();
+  renderMenu(); renderEmptyCategory(); renderCart(); renderStatus(); renderFloor(); renderFeed();
   renderReceipt(order);
 
   const cell = document.querySelector('[data-code="M05"]');

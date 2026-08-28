@@ -91,9 +91,14 @@ export function MenuScreen({
                       stays full for the docket and the bill. */}
                   {shortLabel(lang === "ms" ? item.nameMs : item.nameEn, heading)}
                 </div>
-                <div className="dish-desc">
-                  {lang === "ms" ? item.descMs : item.descEn}
-                </div>
+                {/* The printed menu carries no dish descriptions, so most
+                    items have none. An empty element still takes its margin
+                    and leaves a gap under every name. */}
+                {(lang === "ms" ? item.descMs : item.descEn) && (
+                  <div className="dish-desc">
+                    {lang === "ms" ? item.descMs : item.descEn}
+                  </div>
+                )}
                 <div className="dish-foot">
                   <span className="dish-price num">{formatMYR(item.priceSen)}</span>
                   {out && <span className="tag tag-out">{t("sold_out")}</span>}
