@@ -226,9 +226,9 @@ is small enough to actually get right.
 `apps/pos-android/` wraps the same till in Capacitor, for the two things a browser can never do:
 open a raw socket to a printer on the shop LAN, and speak Bluetooth when the router dies.
 
-**The `Android APK` workflow builds a debug APK on every push** and attaches it to the run, so
-nobody has to install a toolchain — and it is what compiles the native code, since the rest of the
-project is TypeScript.
+**The `Android APK` workflow builds a debug APK** and attaches it to the run — Actions → Android
+APK → newest run → Artifacts. Nobody has to install a toolchain, and it is what compiles the native
+code, since the rest of the project is TypeScript.
 
 - **LAN first, Bluetooth if the LAN does not answer within 1.5 seconds.** That deadline is the
   mechanism, not a nicety: a printer that has quietly gone away does not refuse the connection, it

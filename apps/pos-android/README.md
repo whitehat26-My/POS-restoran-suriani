@@ -12,8 +12,13 @@ only inside an APK nobody can test in CI.
 ## Building it
 
 **You do not need to build this yourself.** The `Android APK` workflow builds a
-debug APK on every push and attaches it to the run; download it, copy it to the
-tablet, and open it.
+debug APK and attaches it to the run.
+
+> Actions → **Android APK** → the newest run → Artifacts → `suriani-pos-debug-apk`
+
+Download it, unzip, copy `app-debug.apk` to the tablet, and open it. It is a
+*debug* build: unsigned for release and fine for your own two tablets, which
+is exactly the case direct APK distribution is right for.
 
 To build locally you need Android Studio (or just the SDK) once:
 

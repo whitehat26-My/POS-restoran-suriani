@@ -4,15 +4,25 @@ name: Android APK
 # build takes minutes and pulls down an SDK, and it must never be the thing
 # standing between a one-line fix and a green tick.
 on:
+  # `push` is main-only and `pull_request` covers branches, so a branch with an
+  # open PR builds once rather than twice. The first run of this workflow did
+  # exactly that: two identical APKs, two runners, one useful result.
   push:
-    branches: [main, 'claude/**']
+    branches: [main]
   pull_request:
     paths:
       - 'apps/pos-android/**'
       - 'apps/pos/**'
       - 'packages/printer/**'
+      - 'packages/offline/**'
+      - 'packages/core/**'
       - '.github/workflows/android.yml'
+  # For an APK of a commit the paths filter skipped.
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   apk:
