@@ -98,12 +98,17 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
   // already walking the server's own retry schedule, and the kitchen waiting
   // an extra round because the till decided to be polite is the wrong trade.
   useEffect(() => {
-    const agent = loadAgent();
-    if (!isTablet() || !agent) return;
+    if (!isTablet()) return;
 
     let stopped = false;
     let sinceHeartbeat = 0;
     const round = async () => {
+      // Read fresh every round rather than capturing it: registering or
+      // forgetting the agent on the Peranti tab then takes effect within
+      // three seconds, instead of leaving the till printing with a
+      // credential the installer thinks they just removed.
+      const agent = loadAgent();
+      if (!agent) return;
       try {
         await printPendingJobs(agent.token);
       } catch {
@@ -127,8 +132,8 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
       stopped = true;
       window.clearInterval(timer);
     };
-    // The agent credential is per device, not per outlet: re-reading it on an
-    // outlet switch would restart the loop for no reason.
+    // The agent credential is per device, not per outlet: restarting the loop
+    // on an outlet switch would achieve nothing.
   }, []);
 
   // Feed + menu load on outlet switch; floor arrives with the WS snapshot.
