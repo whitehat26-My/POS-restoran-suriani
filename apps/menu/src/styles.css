@@ -299,3 +299,16 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 }
 .btn-card-ghost { background: rgba(255,255,255,.16); color: #fff; }
 .status-note { margin: 0; font-size: var(--t-xs); opacity: .9; flex: 1; }
+
+/* The bill has been settled.
+   Shown from the status poll the phone was already making, at the one moment
+   the screen previously went blank — right after somebody handed over money. */
+.paid-note {
+  margin: var(--s3) var(--s4); padding: var(--s4);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--pandan) 14%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--pandan) 40%, transparent);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.paid-note strong { font-size: var(--t-md); color: var(--pandan); }
+.paid-note span { font-size: var(--t-sm); color: var(--muted); }

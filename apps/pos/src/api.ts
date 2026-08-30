@@ -22,6 +22,17 @@ export interface DayRow {
 }
 
 export interface DaySummary extends DayRow {
+  /** What reached the drawer, which is not what left the kitchen. */
+  collectedSen: Sen;
+  byMethod: { method: string; totalSen: Sen; count: number }[];
+  discountSen: Sen;
+  closing: {
+    openingFloatSen: Sen;
+    expectedCashSen: Sen;
+    countedCashSen: Sen | null;
+    varianceSen: Sen | null;
+    closedAt: number | null;
+  } | null;
   byHour: { hour: number; salesSen: Sen; orderCount: number }[];
   byCategory: {
     categoryId: string;
@@ -165,6 +176,39 @@ export interface BillSheet {
         notes: string | null;
       }[];
     }[];
+    /** Taken off the bill without anybody paying it. */
+    discountSen: Sen;
+    /** Already settled, across however many payments. */
+    paidSen: Sen;
+    /** What is still owed. Zero would have closed the bill. */
+    outstandingSen: Sen;
+    payments: {
+      id: string;
+      method: string;
+      amountSen: Sen;
+      tenderedSen: Sen | null;
+      changeSen: Sen | null;
+      roundingSen: Sen;
+      receiptNo: number | null;
+      reference: string | null;
+      paidAt: number;
+    }[];
+    discounts: { id: string; amountSen: Sen; reason: string; at: number }[];
+  } | null;
+}
+
+export interface DayMoney {
+  date: string;
+  collectedSen: Sen;
+  byMethod: { method: string; totalSen: Sen; count: number }[];
+  discountSen: Sen;
+  cashSen: Sen;
+  closing: {
+    openingFloatSen: Sen;
+    expectedCashSen: Sen;
+    countedCashSen: Sen | null;
+    varianceSen: Sen | null;
+    closedAt: number | null;
   } | null;
 }
 
@@ -232,6 +276,26 @@ export const api = {
       method: "POST",
     }).then(json<{ ok: boolean }>),
 
+  /** The day's takings and how the drawer stands. */
+  day: (outletId: string) =>
+    authedFetch(`/api/outlets/${outletId}/day`).then(json<DayMoney>),
+
+  openDay: (outletId: string, openingFloatSen: Sen) =>
+    authedFetch(`/api/outlets/${outletId}/day/open`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ openingFloatSen }),
+    }).then(json<{ ok: boolean }>),
+
+  closeDay: (outletId: string, cashCountedSen: Sen) =>
+    authedFetch(`/api/outlets/${outletId}/day/close`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cashCountedSen }),
+    }).then(
+      json<{ expectedCashSen: Sen; countedCashSen: Sen; varianceSen: Sen }>,
+    ),
+
   settings: (outletId: string) =>
     authedFetch(`/api/outlets/${outletId}/settings`).then(json<OutletSettings>),
 
@@ -275,7 +339,8 @@ export const api = {
 };
 
 /*
- * Counter orders, serve and 86 are deliberately absent here.
+ * Counter orders, serve, 86, payments, discounts and closing a bill are
+ * deliberately absent here.
  *
  * They go through the outbox in offline.ts instead — one path whether the
  * line is up or down, so the offline case is the case that runs every day

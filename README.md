@@ -10,11 +10,15 @@ Two branches of Restoran Suriani are customer zero.
 
 ## Status
 
-**Phase 5 (offline engine) complete, 5b built and awaiting hardware.** Cut the till's line and it
-keeps taking orders; restore it and every order lands exactly once. The tablet now also serves the
-customer menu itself, so a phone on the shop's WiFi can order with the internet unplugged and the
-kitchen docket prints. Proven in a browser against the real router and a real printer; the three
-outage drills on real hardware are what close it out.
+**Phase 6 (payments) complete.** A bill settles and closes: cash or DuitNow QR, the change worked
+out before the drawer opens, a real receipt with a receipt number, and the drawer pulse on the wire.
+At closing time the counted cash is checked against what the till says should be there, and a short
+drawer says it is short.
+
+**Phase 5b is built and awaiting hardware.** Cut the till's line and it keeps taking orders — and
+now keeps taking money too; restore it and everything lands exactly once. The tablet also serves the
+customer menu itself, so a phone on the shop's WiFi can order with the internet unplugged. The three
+outage drills on real hardware are what close 5b out.
 
 | Phase | | |
 |---|---|---|
@@ -28,6 +32,7 @@ outage drills on real hardware are what close it out.
 | 4c | The real printed menu — 13 sections, 147 dishes, the RM 0.50 rule | ✅ |
 | 5 | Offline engine — op log, outbox, replay-safe sync | ✅ |
 | 5b | Android shell — native printing, tablet setup, the tablet's own web server, APK in CI | 🚧 |
+| 6 | Payments — cash and DuitNow QR, split bills, discounts, receipts, drawer, day close | ✅ |
 
 Full plan and roadmap: [`docs/PLAN.md`](docs/PLAN.md).
 
@@ -188,9 +193,9 @@ column for counter orders and 86-ing.
 - **The menu column has a search box**, because 147 dishes in one scroll is not something anyone
   can work during service.
 - **"Cetak resit" prints the bill** at the counter station. Nothing has been paid yet, so the slip
-  says `BIL`, names no payment method, and does not kick the drawer. Phase 6 calls the same
+  says `BIL`, names no payment method, and does not kick the drawer. Taking a payment calls the same
   renderer with a method and gets a paid receipt with the pulse.
-- Closing a bill is the primitive Phase 6's payments will front — explicit and audit-logged,
+- Closing a bill without taking money is the primitive payments front — explicit and audit-logged,
   never silent.
 
 ## Trading through an outage
@@ -279,6 +284,70 @@ off since Tuesday.
 router, power — need real printers and are the gate before any branch goes live. Until then the till
 also runs in a browser, where it already trades offline; a browser cannot open a socket to a printer
 or listen on one, and the Peranti screen says so rather than offering buttons that fail silently.
+
+## Taking money
+
+A bill is settled by **payments against it**, not by a flag on it. That one choice is why splitting
+a bill needed no separate feature: RM 20 in cash from one person and RM 12 by DuitNow from another
+is two rows, and the bill closes the moment they add up. It is also why there is no `paid` session
+status — five separate queries look for a table's live bill by matching `open` or `bill_requested`,
+and a sixth state would mean finding all five or watching a paid-but-unclosed table disappear off
+the floor map. Paid is arithmetic: orders − discounts − payments.
+
+**The till never states the total.** Leave the amount off and the server settles whatever is
+outstanding, worked out from its own orders. Type one and it is an instruction — *this customer is
+putting in RM 20* — which is a different thing from choosing a price. What the till showed rides
+along and a disagreement is audited, the same rule that has governed order pricing since Phase 2b.
+
+### The 5 sen rounding
+
+Malaysia withdrew the 1 sen coin, so a bill paid **over the counter in cash** rounds to the nearest
+5 sen: 1, 2, 6 and 7 down, 3, 4, 8 and 9 up, on the total and never per item. An **electronic
+payment is taken to the sen** — rounding a QR payment up is the thing customers complain about
+publicly, and it is not what the rule says. Rounding also only applies when cash is *clearing* the
+bill; a cashier typing RM 20 towards a split has already chosen a round number.
+
+The adjustment is printed and stored rather than absorbed, because two sen that is invisible on
+paper is two sen nobody can account for later. Every price on the current menu is a multiple of 5
+sen so this is nearly always a no-op — it stops being one the day a service charge appears.
+
+### Discounts and voids
+
+A discount is **not** a negative payment. Folding it into the cash column would balance the drawer
+while the books quietly claimed less was sold than left the kitchen, so it has its own table, a
+compulsory reason, and a name against it. That is the only thing separating a discount from money
+going missing.
+
+A payment is **voided, never deleted** — a cashier who keys RM 100 instead of RM 10 needs the table
+back, and a deleted row would hide that it happened. The bill reopens, the day's expected cash drops
+back, and both events stay in the audit log. Owner and manager only: every other money route is open
+to any staff, because a cashier who cannot take money cannot run a counter, but this is the one that
+makes money disappear rather than move.
+
+### Closing the day
+
+**Kutipan, not just Jualan.** Sales are what left the kitchen; collections are what reached the
+drawer. They differ by discounts and by bills still open, and Rekod shows both with a line saying
+why — a screen that shows only one of them will eventually be used to answer the question it cannot
+answer.
+
+The **Laci** tab takes the opening float in the morning and the counted cash at night, and prints a
+slip naming the variance whether or not the variance is comfortable. Expected cash is the float plus
+the cash payments; a DuitNow payment never touched the drawer and is not expected to be in it. The
+float cannot be changed after the count, or the variance becomes whatever anybody wants it to be.
+
+### What is deliberately not here
+
+- **A payment gateway, or a dynamic DuitNow QR with the amount baked in.** A static merchant QR
+  carries no amount: the customer types it, shows the confirmation, and the cashier confirms. A
+  dynamic QR needs an acquirer, and it belongs behind the interface this phase established.
+- **Splitting by item.** Payments are a list against the bill, so ticking whose dishes are whose is
+  a screen on top of what exists rather than a rework of it.
+- **LHDN e-Invoice.** The exemption threshold rose to RM1m annual turnover on 1 January 2026, so
+  both branches are exempt and speculative tax columns would be dead weight. `docs/PLAN.md` used to
+  claim those fields were stored from the start; they never were, and that line has been corrected
+  rather than left standing. The receipt number *is* here, because a sequence that has to be gapless
+  cannot be backfilled onto sales that already happened.
 
 ## When the internet dies
 

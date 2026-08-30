@@ -2796,6 +2796,57 @@ export class OutletDO extends DurableObject<Env> {
             })),
           }
         : null,
+      // What the customer wants to know at the one moment they care most.
+      settled: detail?.session ? null : await this.justSettled(table.id),
+    };
+  }
+
+  /**
+   * A bill from this table that was paid in the last few minutes.
+   *
+   * Without this the customer's phone simply goes blank the instant the
+   * cashier closes the bill, which is the worst possible moment for a screen
+   * to stop saying anything — they have just handed over money.
+   *
+   * Ten minutes, and only the table's own token opens it. A stale QR left on
+   * a card cannot be used to read what the last diners spent, and a token
+   * that is genuinely this table's belongs to somebody who was sitting at it.
+   */
+  private static readonly SETTLED_WINDOW_MS = 10 * 60_000;
+
+  private async justSettled(tableId: string): Promise<
+    { totalSen: Sen; paidSen: Sen; receiptNo: number | null; at: number } | null
+  > {
+    const since = Date.now() - OutletDO.SETTLED_WINDOW_MS;
+    const recent = (
+      await this.db
+        .select()
+        .from(schema.tableSessions)
+        .where(
+          and(
+            eq(schema.tableSessions.tableId, tableId),
+            eq(schema.tableSessions.status, "closed"),
+            gte(schema.tableSessions.closedAt, since),
+          ),
+        )
+    ).sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))[0];
+    if (!recent) return null;
+
+    const paid = (
+      await this.db
+        .select()
+        .from(schema.payments)
+        .where(eq(schema.payments.sessionId, recent.id))
+    ).filter((p) => p.voidedAt === null);
+    // Closed with nothing paid is a walkout or a write-off, and telling the
+    // table it has been settled would be a lie.
+    if (paid.length === 0) return null;
+
+    return {
+      totalSen: paid.reduce((sum, p) => sum + p.amountSen, 0),
+      paidSen: paid.reduce((sum, p) => sum + p.amountSen, 0),
+      receiptNo: paid[paid.length - 1]!.receiptNo,
+      at: recent.closedAt ?? Date.now(),
     };
   }
 

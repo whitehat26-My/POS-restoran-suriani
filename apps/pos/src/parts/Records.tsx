@@ -99,6 +99,12 @@ export function Records({
                   </span>
                 </div>
                 <div className="stat">
+                  <span className="stat-label">Kutipan</span>
+                  <span className="stat-value num" data-testid="collected">
+                    {formatMYR(summary.collectedSen)}
+                  </span>
+                </div>
+                <div className="stat">
                   <span className="stat-label">Bil</span>
                   <span className="stat-value num">{summary.billCount}</span>
                 </div>
@@ -107,9 +113,54 @@ export function Records({
                   <span className="stat-value num">{summary.itemCount}</span>
                 </div>
               </div>
+              {/* Two numbers, not one, and the difference explained. Sales are
+                  what left the kitchen; collections are what reached the
+                  drawer. A screen showing only one of them will eventually be
+                  used to answer the question it cannot answer. */}
               <p className="stat-note">
-                Jualan, bukan untung — sistem belum tahu kos bahan.
+                Jualan ialah makanan yang keluar dapur. Kutipan ialah wang yang
+                masuk laci — bezanya diskaun dan bil yang belum dijelaskan.
+                Kedua-duanya jualan, bukan untung: sistem belum tahu kos bahan.
               </p>
+
+              {(summary.byMethod.length > 0 || summary.discountSen > 0) && (
+                <>
+                  <div className="zone-name">Cara bayaran</div>
+                  {summary.byMethod.map((m) => (
+                    <div className="bill-line" key={m.method}>
+                      <span className="grow">
+                        {m.method === "cash" ? "Tunai" : "DuitNow QR"}
+                        <span className="ticket-note"> {m.count} bayaran</span>
+                      </span>
+                      <span className="num">{formatMYR(m.totalSen)}</span>
+                    </div>
+                  ))}
+                  {summary.discountSen > 0 && (
+                    <div className="bill-line">
+                      <span className="grow">Diskaun diberi</span>
+                      <span className="num">{formatMYR(-summary.discountSen)}</span>
+                    </div>
+                  )}
+                  {summary.closing?.closedAt && (
+                    <div
+                      className={`bill-total ${summary.closing.varianceSen ? "is-variance" : ""}`}
+                      data-testid="day-variance"
+                    >
+                      <span>
+                        Laci{" "}
+                        {summary.closing.varianceSen === 0
+                          ? "seimbang"
+                          : summary.closing.varianceSen! > 0
+                            ? "lebih"
+                            : "kurang"}
+                      </span>
+                      <span className="num">
+                        {formatMYR(Math.abs(summary.closing.varianceSen ?? 0))}
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
 
               <div className="zone-name">Mengikut jam</div>
               {summary.byHour.length === 0 && (

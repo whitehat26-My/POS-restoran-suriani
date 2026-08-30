@@ -316,3 +316,46 @@ button.pill { cursor: pointer; }
    failed to print must be impossible to mistake for one that did. */
 .ticket.is-local { border-style: dashed; border-color: var(--tarik); }
 .ticket.is-local .ticket-tbl { color: var(--tarik); }
+
+/* ---- taking money ----
+   Built for one hand on a counter with a queue behind it: a keypad rather
+   than a keyboard, and the change in the largest type on the screen, because
+   that is the number the cashier reads out loud while counting it back. */
+.pay-due, .pay-tendered, .pay-change {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s3); padding: var(--s3) 0;
+}
+.pay-due span, .pay-tendered span, .pay-change span { color: var(--pos-muted); font-size: var(--t-sm); }
+.pay-due strong { font-size: var(--t-xl); font-weight: 800; letter-spacing: -.02em; }
+.pay-tendered strong { font-size: var(--t-lg); font-weight: 700; }
+.pay-change {
+  border-top: 1px solid var(--pos-edge); margin-top: var(--s2);
+  background: color-mix(in srgb, var(--pandan) 12%, transparent);
+  border-radius: var(--r-md); padding: var(--s3);
+}
+.pay-change strong { font-size: var(--t-xl); font-weight: 800; color: var(--pandan); }
+/* Short, not "negative change": the cashier needs to ask for more money, and
+   a minus sign in front of a number does not say that. */
+.pay-change.is-short { background: color-mix(in srgb, var(--sambal) 16%, transparent); }
+.pay-change.is-short strong { color: var(--sambal); }
+.pay-note { font-size: var(--t-sm); color: var(--pos-muted); line-height: 1.5; margin: var(--s2) 0; }
+
+.opt-row-group { display: flex; gap: var(--s2); margin: var(--s3) 0; }
+.opt-row-group .opt { flex: 1; justify-content: center; }
+
+.quick-row { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s2) 0; }
+.quick-row .mini { flex: 1 1 auto; min-width: 68px; }
+
+/* Four columns of 56px targets: thumb-sized, and the same grid the floor map
+   uses, so the two screens feel like one machine. */
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); margin: var(--s3) 0; }
+.keypad button {
+  height: 56px; border-radius: var(--r-md);
+  border: 1px solid var(--pos-edge); background: var(--pos-raised);
+  color: var(--pos-text); font: inherit; font-size: var(--t-lg); font-weight: 800;
+  font-family: var(--mono);
+}
+.keypad button:active { background: var(--pos-panel); }
+
+/* A drawer that does not balance should not look like one that does. */
+.bill-total.is-variance { color: var(--tarik); }

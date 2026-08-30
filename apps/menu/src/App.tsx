@@ -56,6 +56,10 @@ export function App() {
   /** The dish just added, and the line to drop if the customer says undo. */
   const [undo, setUndo] = useState<{ lineId: string; name: string } | null>(null);
   const [billRequested, setBillRequested] = useState(false);
+  const [settled, setSettled] = useState<{
+    paidSen: number;
+    receiptNo: number | null;
+  } | null>(null);
   const [waiterCalled, setWaiterCalled] = useState(false);
   const menuVersionRef = useRef<number | null>(null);
 
@@ -99,6 +103,14 @@ export function App() {
           const anyCooking = orders.some((o) => o.status === "printed");
           setStage(allServed ? 3 : anyCooking ? 2 : 1);
           setBillRequested(status.session.status === "bill_requested");
+        } else if (status.settled) {
+          // The cashier just took the money. This is the one moment the
+          // customer most wants the screen to say something, and until now it
+          // went blank.
+          setSettled({
+            paidSen: status.settled.paidSen,
+            receiptNo: status.settled.receiptNo,
+          });
         }
 
         // A moved menuVersion means the kedai changed something — an item
@@ -329,6 +341,17 @@ export function App() {
           onSubmit={submit}
         />
       )}
+      {settled && (
+        <div className="paid-note" role="status" data-testid="paid">
+          <strong>{t("paid_title")}</strong>
+          <span>
+            {t("paid_body")} {formatMYR(settled.paidSen)}
+            {settled.receiptNo !== null &&
+              ` · ${t("receipt_no")} ${String(settled.receiptNo).padStart(6, "0")}`}
+          </span>
+        </div>
+      )}
+
       {view === "placed" && (
         <PlacedScreen
           t={t}

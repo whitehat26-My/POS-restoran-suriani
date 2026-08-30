@@ -103,6 +103,20 @@ export async function placeOrder(
 export interface SessionStatus {
   menuVersion: number;
   table: { label: string; status: string };
+  /**
+   * The bill was settled in the last few minutes.
+   *
+   * Present only once the session has closed, and only when money was
+   * actually taken. Without it the phone goes blank the instant the cashier
+   * closes the bill — which is the moment the customer most wants the screen
+   * to say something.
+   */
+  settled?: {
+    totalSen: number;
+    paidSen: number;
+    receiptNo: number | null;
+    at: number;
+  } | null;
   session: {
     status: string;
     totalSen: number;

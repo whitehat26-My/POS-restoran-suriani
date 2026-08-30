@@ -15,7 +15,12 @@
  */
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { groupLinesByStation } from "@suriani/core/stations";
-import { renderKitchenTicket, renderTestSlip } from "@suriani/escpos/templates";
+import {
+  renderKitchenTicket,
+  renderReceipt,
+  renderTestSlip,
+  type ReceiptLine,
+} from "@suriani/escpos/templates";
 import {
   printVia,
   runOnce,
@@ -330,5 +335,55 @@ export async function printOrderDockets(input: {
   // drinks slip came out still needs the kitchen's, and the only mechanism
   // that will produce it is the server's queue.
   report.ok = report.errors.length === 0 && report.printed === grouped.length;
+  return report;
+}
+
+/**
+ * The receipt, printed by the tablet itself.
+ *
+ * Same rule as the kitchen docket: the tablet is the print agent for its own
+ * restaurant, so routing a slip it can print through the cloud only hands the
+ * job back to this device — and doing it directly means the outage path and
+ * the everyday path are one path, exercised on every ordinary Tuesday.
+ *
+ * The drawer pulse rides on these bytes, which is the part that matters. A
+ * cashier with money in their hand and a drawer that will not open is stuck
+ * in a way no error message helps with.
+ */
+export async function printReceiptLocally(input: {
+  outletName: string;
+  tableLabel: string;
+  orderCode: string;
+  receiptNo?: number;
+  paidAt: Date;
+  lines: ReceiptLine[];
+  totalSen: number;
+  itemCount?: number;
+  method: string;
+  cashReceivedSen?: number;
+  changeSen?: number;
+  roundingSen?: number;
+  discountSen?: number;
+  paidSen?: number;
+  balanceSen?: number;
+  printers?: PrinterMap;
+}): Promise<PrintedDockets> {
+  const printers = input.printers ?? loadPrinters();
+  const report: PrintedDockets = { ok: false, printed: 0, errors: [] };
+
+  const transports = transportsFor(printers, "counter");
+  if (transports.length === 0) {
+    report.errors.push("no counter printer configured");
+    return report;
+  }
+
+  const { printers: _ignored, ...receipt } = input;
+  try {
+    await printVia(transports, renderReceipt(receipt));
+    report.printed = 1;
+    report.ok = true;
+  } catch (err) {
+    report.errors.push(err instanceof Error ? err.message : String(err));
+  }
   return report;
 }

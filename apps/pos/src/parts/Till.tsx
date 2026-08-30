@@ -23,9 +23,11 @@ import {
   loadAgent,
   printOrderDockets,
   printPendingJobs,
+  printReceiptLocally,
   sendHeartbeat,
 } from "../print";
 import { BillSheet } from "./BillSheet";
+import { DayClose } from "./DayClose";
 import { Devices } from "./Devices";
 import { ItemConfig, type ConfiguredLine } from "./ItemConfig";
 import { Records } from "./Records";
@@ -38,7 +40,7 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
   // shown-and-403'd, because a button that always fails is worse than no
   // button — but the server gate is what actually enforces it.
   const manages = role === "owner" || role === "manager";
-  const [view, setView] = useState<"floor" | "records" | "devices">("floor");
+  const [view, setView] = useState<"floor" | "records" | "devices" | "day">("floor");
 
   const [live, setLive] = useState<LiveState>("connecting");
   const [zones, setZones] = useState<Zone[]>([]);
@@ -308,6 +310,27 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
             }, 60_000);
             break;
           }
+          case "payment.recorded": {
+            // A bill mid-split. The table stays on the floor with what is
+            // still owed, so the next cashier does not ask for the whole
+            // amount again.
+            setTables((prev) =>
+              prev.map((tb) =>
+                tb.id === event.tableId && tb.session
+                  ? {
+                      ...tb,
+                      session: { ...tb.session, totalSen: event.balanceSen as number },
+                    }
+                  : tb,
+              ),
+            );
+            say(`💵 Bayaran ${formatMYR(event.amountSen as number)} diterima`);
+            break;
+          }
+          case "bill.discounted": {
+            say(`Diskaun ${formatMYR(event.amountSen as number)} direkod`);
+            break;
+          }
           case "session.closed": {
             setTables((prev) =>
               prev.map((tb) =>
@@ -444,6 +467,100 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
     say(printed.ok ? "Pesanan kaunter dicetak" : "Pesanan kaunter direkod");
   };
 
+  /**
+   * Take money, print the slip, and let the server close the bill.
+   *
+   * Through the outbox like every other cashier action, which is what makes
+   * settling a bill survive an outage — until Phase 6 the bill sheet talked
+   * to the server directly and this one tap was the only thing on the till
+   * that stopped working when the line did.
+   *
+   * The slip is printed *before* the op is written, the same trade Phase 5b
+   * made for kitchen dockets: the worse failure is a customer walking away
+   * with no receipt and a drawer that never opened, and that one is invisible.
+   */
+  const takePayment = async (input: {
+    sessionId: string;
+    method: "cash" | "duitnow_qr";
+    amountSen?: number;
+    tenderedSen?: number;
+    reference?: string;
+    expectedDueSen: number;
+  }): Promise<{ settled: boolean; balanceSen: number }> => {
+    const till = offline.current;
+    if (!till) return { settled: false, balanceSen: input.expectedDueSen };
+
+    const bill = await api.bill(outletId, tableId(input.sessionId) ?? "");
+    const session = bill?.session;
+    const amountSen = input.amountSen ?? input.expectedDueSen;
+    const balanceSen = Math.max(0, input.expectedDueSen - amountSen);
+
+    let printed = { ok: false };
+    if (session) {
+      printed = await printReceiptLocally({
+        outletName: outlet.name,
+        tableLabel: bill.table.label,
+        orderCode: `#${session.id.slice(-5).toUpperCase()}`,
+        paidAt: new Date(),
+        lines: session.orders.flatMap((o) =>
+          o.lines.map((l) => ({
+            qty: l.qty,
+            name: l.nameMs,
+            modifiers: l.modifiers,
+            lineSen: l.lineSen,
+          })),
+        ),
+        totalSen: session.totalSen,
+        itemCount: session.itemCount,
+        method: input.method,
+        discountSen: session.discountSen || undefined,
+        cashReceivedSen: input.tenderedSen,
+        changeSen:
+          input.tenderedSen === undefined
+            ? undefined
+            : input.tenderedSen - amountSen,
+        paidSen: amountSen,
+        balanceSen: balanceSen || undefined,
+      });
+    }
+
+    await till.perform({
+      kind: "payment.record",
+      sessionId: input.sessionId,
+      method: input.method,
+      amountSen: input.amountSen,
+      tenderedSen: input.tenderedSen,
+      reference: input.reference,
+      expectedDueSen: input.expectedDueSen,
+      printedLocally: printed.ok,
+    });
+    setPendingOps(await till.pending());
+    say(
+      balanceSen > 0
+        ? `Bayaran ${formatMYR(amountSen)} — baki ${formatMYR(balanceSen)}`
+        : `Dibayar ${formatMYR(amountSen)}`,
+    );
+    // Told, not asked. The op is durable and the till worked the arithmetic
+    // out itself, so waiting on a refetch would only mean the sheet sat there
+    // showing an unpaid bill while the outbox drained.
+    return { settled: balanceSen <= 0, balanceSen };
+  };
+
+  const giveDiscount = async (input: {
+    sessionId: string;
+    amountSen: number;
+    reason: string;
+  }) => {
+    const till = offline.current;
+    if (!till) return;
+    await till.perform({ kind: "bill.discount", ...input });
+    setPendingOps(await till.pending());
+  };
+
+  /** Which table a session is sitting at, from the floor the till already has. */
+  const tableId = (sessionId: string) =>
+    tables.find((t) => t.session?.id === sessionId)?.id;
+
   const toggle86 = async (item: MenuItem) => {
     const next = item.isAvailable === 0;
     const till = offline.current;
@@ -497,6 +614,17 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
               </button>
             </>
           )}
+          {/* Outside the `manages` block above, deliberately: counting the
+              drawer is whoever is on the counter at closing time, not only
+              the owner. */}
+          <button
+            className="pill"
+            aria-pressed={view === "day"}
+            data-testid="tab-day"
+            onClick={() => setView("day")}
+          >
+            Laci
+          </button>
           {outlets.length > 1 &&
             outlets.map((o) => (
               <button
@@ -581,6 +709,8 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
 
       {view === "records" ? (
         <Records outletId={outletId} outletName={outlet.name} onSay={say} />
+      ) : view === "day" ? (
+        <DayClose outletId={outletId} onSay={say} />
       ) : view === "devices" ? (
         <Devices
           outletId={outletId}
@@ -781,6 +911,9 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
       {billTable && (
         <BillSheet
           outletId={outletId}
+          outletName={outlet.name}
+          onPay={takePayment}
+          onDiscount={giveDiscount}
           tableId={billTable}
           onClose={() => setBillTable(null)}
           onSay={say}

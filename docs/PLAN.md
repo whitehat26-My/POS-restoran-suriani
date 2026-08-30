@@ -410,8 +410,17 @@ the internet unplugged.
 
 **Built in from day 1 because retrofitting is painful** — org/outlet on everything · usage metering
 for billing later · payment provider behind an interface (drop in HitPay/Fiuu dynamic DuitNow QR with
-no change to ordering) · printer driver behind an interface (KDS later) · **LHDN e-Invoice fields**
-(SST, item classification, optional buyer TIN) stored from the start.
+no change to ordering) · printer driver behind an interface (KDS later) · **a monotonic receipt
+number per outlet**, never reset, which is the piece of LHDN e-Invoice groundwork that would have
+been genuinely painful to add later.
+
+**Correction, Phase 6.** This section used to promise that LHDN e-Invoice fields — SST, item
+classification, optional buyer TIN — were "stored from the start". They were not: no such column
+ever existed in any schema. The exemption threshold rose to **RM1m annual turnover on 1 January
+2026**, so Restoran Suriani is exempt and speculative columns would be dead weight carried by every
+outlet. Deferred to Phase 7+ deliberately, and named here rather than left as a claim that was not
+true. What Phase 6 did add is the receipt number, because a number that has to be sequential and
+gapless cannot be backfilled onto sales that already happened.
 
 ---
 

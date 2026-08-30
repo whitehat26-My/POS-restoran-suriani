@@ -70,8 +70,12 @@ if (elapsed >= 1000) fail(`order took ${elapsed}ms to reach the till (gate: <100
 ok(`order on the till in ${elapsed}ms (< 1000ms gate)`);
 
 // Ticket carries the modifier line.
-const ticket = await pos.textContent('.ticket');
-ticket.includes('Bungkus (ais)') || fail('ticket missing modifier');
+//
+// Across every ticket rather than the first one: the feed holds whatever else
+// the shop did today, so asserting on `.ticket` alone made this pass or fail
+// on the order of unrelated orders.
+const tickets = await pos.$$eval('.ticket', (els) => els.map((e) => e.textContent));
+tickets.some((t) => t.includes('Bungkus (ais)')) || fail('no ticket carries the modifier');
 ok('ticket shows the modifier');
 
 // Table went blue with the running total.
@@ -89,7 +93,14 @@ await cust.waitForFunction(
 ok('customer track reached Dihidang via the status poll');
 
 // --- Minta Bil rings the till amber ---
-await cust.click('.btn-card:has-text("Minta Bil")');
+// Tolerant of a table that already asked, the same way the 86 toggle below
+// is: this script is meant to survive being run twice against a database it
+// has already touched. The card also re-renders on every twelve-second poll,
+// so the click is given a stable locator and room to retry.
+const askBill = cust.locator('.btn-card', { hasText: 'Minta Bil' }).first();
+if (await askBill.count()) {
+  await askBill.click({ timeout: 15000 });
+}
 await pos.waitForSelector('.tbl[data-state="bill_requested"][data-label="Meja 01"]', { timeout: 5000 });
 ok('Minta Bil turned the table amber on the till');
 await cust.waitForSelector('.status-note');
@@ -116,10 +127,15 @@ const printToast = await pos.textContent('.toast');
 printToast.includes('pencetak') || fail(`unexpected print toast: ${printToast}`);
 ok('bill queued to the printer');
 
-pos.on('dialog', (d) => d.accept());
-await pos.click('button:has-text("Tutup bil")');
-await pos.waitForSelector('.tbl[data-state="empty"][data-label="Meja 01"]', { timeout: 5000 });
-ok('bill closed, table freed');
+// Settle it, which is how a bill ends now. Closing without payment is still
+// there but it is the unusual path — a walkout, or a bill settled outside the
+// system — and it says so on the button.
+await pos.click('[data-testid="take-payment"]');
+await pos.waitForSelector('[data-testid="payment"]');
+await pos.click('[data-testid="tender-exact"]');
+await pos.click('[data-testid="pay-confirm"]');
+await pos.waitForSelector('.tbl[data-state="empty"][data-label="Meja 01"]', { timeout: 8000 });
+ok('bill settled, table freed');
 
 // --- 86 from the till ---
 // 147 dishes: the counter finds one by typing, not by scrolling.

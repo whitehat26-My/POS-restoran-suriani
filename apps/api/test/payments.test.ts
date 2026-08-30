@@ -337,6 +337,36 @@ describe("voiding a payment", () => {
   });
 });
 
+describe("what the customer's phone sees", () => {
+  it("says the bill was paid instead of going blank", async () => {
+    const { t, stub, sessionId } = await billed("Suriani Told");
+    const token = `${t.qrToken}p`;
+
+    // Mid-meal: an open session, nothing settled.
+    const before = await stub.getStatus(token);
+    expect(before?.session).not.toBeNull();
+    expect(before?.settled).toBeNull();
+
+    await pay(t, sessionId, { method: "cash", tenderedSen: 2000 });
+
+    const after = await stub.getStatus(token);
+    // The session is gone — that is what closing means — but the phone is
+    // told why, at the one moment the customer most wants it to say
+    // something: they have just handed over money.
+    expect(after?.session).toBeNull();
+    expect(after?.settled).toMatchObject({ paidSen: 1600, receiptNo: 1 });
+  });
+
+  it("says nothing when a table was closed without payment", async () => {
+    const { t, stub, sessionId } = await billed("Suriani Walkout");
+    await stub.closeSession({ sessionId });
+    const status = await stub.getStatus(`${t.qrToken}p`);
+    // A walkout or a write-off. Telling the table it has been settled would
+    // be a lie, and a comforting one is still a lie.
+    expect(status?.settled).toBeNull();
+  });
+});
+
 describe("the tenant door, on money", () => {
   it("answers 404 when one organisation addresses another's outlet", async () => {
     const { t: a, sessionId } = await billed("Suriani A");
