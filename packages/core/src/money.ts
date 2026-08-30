@@ -57,3 +57,47 @@ export function formatMYR(sen: Sen): string {
   const cents = String(abs % 100).padStart(2, "0");
   return `${negative ? "-" : ""}RM ${ringgit.toLocaleString("en-MY")}.${cents}`;
 }
+
+/* ------------------------------------------------------------------ *
+ * Cash rounding
+ *
+ * Malaysia withdrew the 1 sen coin, so a bill paid over the counter is
+ * rounded to the nearest 5 sen: a total ending in 1, 2, 6 or 7 rounds down,
+ * and one ending in 3, 4, 8 or 9 rounds up.
+ *
+ * Two rules that are easy to get wrong and expensive to get wrong:
+ *
+ *  - It applies to the **total of the bill**, never to individual items.
+ *    Rounding each line would drift by sen across a big order.
+ *  - It applies to **cash only**. An electronic payment is taken to the sen,
+ *    and rounding one up is the kind of thing customers notice and complain
+ *    about publicly.
+ *
+ * Every price on the current menu is already a multiple of 5 sen, so today
+ * this is nearly always a no-op. It stops being one the moment a service
+ * charge or SST is added, and by then it needs to already be right.
+ * ------------------------------------------------------------------ */
+
+/** The amount actually taken in cash for a bill of `sen`. */
+export function roundToNearest5Sen(sen: Sen): Sen {
+  assertSen(sen, "amount");
+  // Math.round is not enough on its own: it breaks ties away from zero for
+  // positives but towards zero for negatives, so a refund would round the
+  // wrong way. Work on the magnitude and put the sign back.
+  const sign = sen < 0 ? -1 : 1;
+  const abs = Math.abs(sen);
+  const remainder = abs % 5;
+  const rounded = remainder < 3 ? abs - remainder : abs + (5 - remainder);
+  return sign * rounded;
+}
+
+/**
+ * The adjustment, as a signed amount.
+ *
+ * Recorded on the payment rather than folded silently into the total, so a
+ * day's takings can be reconciled to the sen and nobody has to wonder where
+ * two sen went.
+ */
+export function cashRoundingSen(sen: Sen): Sen {
+  return roundToNearest5Sen(sen) - assertSen(sen, "amount");
+}

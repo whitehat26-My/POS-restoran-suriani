@@ -799,8 +799,11 @@ app.post("/api/outlets/:outletId/orders/:orderId/served", async (c) => {
 });
 
 /**
- * Close a bill and free the table. Phase 6 fronts this with payment
- * recording; until then closing is audit-logged, never silent.
+ * Close a bill and free the table.
+ *
+ * Kept as a primitive now that payments front it: a bill written off, or one
+ * settled outside the system, still has to be closable. Every use is
+ * audit-logged, so a table freed without money is visible rather than silent.
  */
 app.post("/api/outlets/:outletId/sessions/:sessionId/close", async (c) => {
   const session = c.get("session");
@@ -822,8 +825,9 @@ app.post("/api/outlets/:outletId/sessions/:sessionId/close", async (c) => {
  * Print the bill for an open table.
  *
  * Any staff role, deliberately: a cashier who cannot hand a customer their
- * bill cannot do the job. Phase 6 will pass a `method` here once a payment has
- * been recorded; until then the slip prints as an unsettled bill.
+ * bill cannot do the job. No method is passed — this is the unpaid BIL. The
+ * paid receipt is queued by `recordPayment` itself, while the session is
+ * still readable.
  */
 app.post("/api/outlets/:outletId/sessions/:sessionId/receipt", async (c) => {
   const session = c.get("session");
@@ -843,6 +847,196 @@ app.post("/api/outlets/:outletId/sessions/:sessionId/receipt", async (c) => {
       ? c.json({ error: "no print station configured" }, 409)
       : c.json({ error: "not found" }, 404);
   }
+  return c.json(result);
+});
+
+/**
+ * Today, in the restaurant's own timezone.
+ *
+ * A day belongs to the shop, not to UTC. An eight o'clock evening service in
+ * Kuala Lumpur is already tomorrow in UTC, so bucketing on UTC would post
+ * tonight's takings to the wrong day, every day.
+ */
+function localDateIn(timeZone: string): string {
+  // en-CA gives YYYY-MM-DD, which sorts correctly as a string.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+/* ------------------------------------------------------------------ *
+ * Money
+ *
+ * Every route here is open to all staff, deliberately. A cashier who cannot
+ * take money, give a discount or count the drawer cannot run a counter, and
+ * the protection that matters is the audit log naming who did what — not a
+ * role gate that has the owner walking over for every RM 2 discount.
+ *
+ * The exception is voiding a payment, which is owner and manager only: that
+ * is the one action here that makes money disappear rather than move.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Take a payment, and close the bill if that settles it.
+ *
+ * `amountSen` omitted means "settle the rest" — the server works out how much
+ * that is. Present, it is a split: this customer is putting in this much.
+ */
+app.post("/api/outlets/:outletId/sessions/:sessionId/payments", async (c) => {
+  const session = c.get("session");
+  const handle = await getOutletForSession(
+    c.env,
+    session,
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.json<{
+    method?: string;
+    amountSen?: number;
+    tenderedSen?: number;
+    reference?: string;
+    clientUlid?: string;
+    expectedDueSen?: number;
+  }>();
+
+  if (body.method !== "cash" && body.method !== "duitnow_qr") {
+    return c.json({ error: "unknown method" }, 400);
+  }
+
+  const result = await handle.stub.recordPayment({
+    sessionId: c.req.param("sessionId"),
+    method: body.method,
+    amountSen: body.amountSen,
+    tenderedSen: body.tenderedSen,
+    reference: body.reference,
+    clientUlid: body.clientUlid,
+    expectedDueSen: body.expectedDueSen,
+    userId: session.userId,
+  });
+
+  if (!result.ok) {
+    return result.error === "not_found"
+      ? c.json({ error: "not found" }, 404)
+      : c.json({ error: result.error }, 409);
+  }
+  return c.json(result, result.duplicate ? 200 : 201);
+});
+
+/**
+ * Reverse a payment.
+ *
+ * Owner and manager only: everything else on this surface moves money, and
+ * this is the one that makes it disappear. The reason is compulsory and the
+ * row is kept, so the mistake stays visible.
+ */
+app.post("/api/outlets/:outletId/payments/:paymentId/void", manages, async (c) => {
+  const session = c.get("session");
+  const handle = await getOutletForSession(
+    c.env,
+    session,
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.json<{ reason?: string }>().catch(() => ({ reason: "" }));
+  const result = await handle.stub.voidPayment({
+    paymentId: c.req.param("paymentId"),
+    reason: body.reason ?? "",
+    userId: session.userId,
+  });
+  if (!result.ok) {
+    return result.error === "not_found"
+      ? c.json({ error: "not found" }, 404)
+      : c.json({ error: result.error }, 400);
+  }
+  return c.json(result);
+});
+
+/** Take an amount off a bill. The reason is not optional. */
+app.post("/api/outlets/:outletId/sessions/:sessionId/discount", async (c) => {
+  const session = c.get("session");
+  const handle = await getOutletForSession(
+    c.env,
+    session,
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.json<{ amountSen?: number; reason?: string }>();
+  const result = await handle.stub.applyDiscount({
+    sessionId: c.req.param("sessionId"),
+    amountSen: body.amountSen ?? 0,
+    reason: body.reason ?? "",
+    userId: session.userId,
+  });
+  if (!result.ok) {
+    return result.error === "not_found"
+      ? c.json({ error: "not found" }, 404)
+      : c.json({ error: result.error }, 400);
+  }
+  return c.json(result);
+});
+
+/**
+ * The day's money, and the drawer.
+ *
+ * The date comes from the outlet's own timezone, never from the client —
+ * otherwise anybody could shift a day's takings by a few hours.
+ */
+app.get("/api/outlets/:outletId/day", async (c) => {
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  const timeZone = handle.outlet.timezone ?? "Asia/Kuala_Lumpur";
+  const date = c.req.query("date") ?? localDateIn(timeZone);
+  return c.json(await handle.stub.dayCash({ date, timeZone }));
+});
+
+app.post("/api/outlets/:outletId/day/open", async (c) => {
+  const session = c.get("session");
+  const handle = await getOutletForSession(
+    c.env,
+    session,
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.json<{ openingFloatSen?: number }>();
+  const timeZone = handle.outlet.timezone ?? "Asia/Kuala_Lumpur";
+  const result = await handle.stub.openDay({
+    date: localDateIn(timeZone),
+    openingFloatSen: body.openingFloatSen ?? 0,
+    userId: session.userId,
+  });
+  if (!result.ok) return c.json({ error: result.error }, 400);
+  return c.json({ ok: true });
+});
+
+app.post("/api/outlets/:outletId/day/close", async (c) => {
+  const session = c.get("session");
+  const handle = await getOutletForSession(
+    c.env,
+    session,
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+
+  const body = await c.req.json<{ cashCountedSen?: number }>();
+  const timeZone = handle.outlet.timezone ?? "Asia/Kuala_Lumpur";
+  const result = await handle.stub.closeDay({
+    date: localDateIn(timeZone),
+    cashCountedSen: body.cashCountedSen ?? 0,
+    timeZone,
+    userId: session.userId,
+  });
+  if (!result.ok) return c.json({ error: result.error }, 400);
   return c.json(result);
 });
 

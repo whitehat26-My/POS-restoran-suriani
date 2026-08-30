@@ -251,6 +251,69 @@ export const MIGRATIONS: Migration[] = [
       `CREATE INDEX idx_orders_placed_at ON orders (placed_at)`,
     ],
   },
+  {
+    // Money.
+    //
+    // `payments` and `daily_closings` have existed since v1 and nothing has
+    // ever written to either. This is the migration that makes them real, and
+    // everything it adds is a lesson from how the rest of this system already
+    // works:
+    //
+    // `client_ulid` because a payment is an append-only fact replayed from a
+    // tablet's op log exactly like an order, and a lost reply on a flaky line
+    // must not take the customer's money twice. UNIQUE is what enforces that,
+    // not the application.
+    //
+    // `tendered_sen` / `change_sen` / `rounding_sen` because a receipt has to
+    // show what was handed over and handed back, and because the 5-sen cash
+    // rounding is an adjustment somebody will one day have to account for. A
+    // total that has silently absorbed it cannot be reconciled.
+    //
+    // `voided_at` rather than a DELETE. A cashier who keys RM 100 instead of
+    // RM 10 needs it reversed, and a deleted row hides that it ever happened —
+    // the same rule that made archived tables a soft delete in v2.
+    //
+    // `receipt_no` monotonic per outlet, never reset. A number that restarts
+    // each morning lets two receipts share an identifier, which is the one
+    // thing a receipt number exists to prevent.
+    version: 7,
+    statements: [
+      `ALTER TABLE payments ADD COLUMN client_ulid TEXT`,
+      // A partial index: the column is nullable for rows written before this
+      // existed, and SQLite treats every NULL as distinct anyway, but being
+      // explicit says the constraint is about real values only.
+      `CREATE UNIQUE INDEX idx_payments_client_ulid
+         ON payments (client_ulid) WHERE client_ulid IS NOT NULL`,
+      `ALTER TABLE payments ADD COLUMN tendered_sen INTEGER`,
+      `ALTER TABLE payments ADD COLUMN change_sen INTEGER`,
+      `ALTER TABLE payments ADD COLUMN rounding_sen INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE payments ADD COLUMN device_id TEXT`,
+      `ALTER TABLE payments ADD COLUMN voided_at INTEGER`,
+      `ALTER TABLE payments ADD COLUMN void_reason TEXT`,
+      `ALTER TABLE payments ADD COLUMN receipt_no INTEGER`,
+      // The day's takings range-scan this, the same reason v6 indexed
+      // orders.placed_at.
+      `CREATE INDEX idx_payments_paid_at ON payments (paid_at)`,
+
+      // A discount is not a negative payment. Folding it into the cash column
+      // would make the drawer balance while the books quietly lied about what
+      // was sold, so it lives on its own with a compulsory reason and a name
+      // against it.
+      `CREATE TABLE bill_discounts (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        amount_sen INTEGER NOT NULL,
+        reason TEXT NOT NULL,
+        given_by_user_id TEXT,
+        at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX idx_bill_discounts_session ON bill_discounts (session_id)`,
+
+      // Allocated inside the Durable Object, which is single-threaded, so two
+      // receipts can never take the same number however busy the counter is.
+      `ALTER TABLE settings ADD COLUMN receipt_seq INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 /** Highest version this build knows how to migrate to. */

@@ -24,7 +24,12 @@ import * as schema from "./schema";
 import { runMigrations } from "./migrations";
 import { id, qrToken, ulid } from "../lib/ids";
 import { batchForSql } from "../lib/chunk";
-import { lineTotalSen, type Modifier, type Sen } from "../lib/money";
+import {
+  cashRoundingSen,
+  lineTotalSen,
+  type Modifier,
+  type Sen,
+} from "../lib/money";
 import { groupLinesByStation } from "@suriani/core/stations";
 import {
   renderKitchenTicket,
@@ -139,7 +144,23 @@ export interface SyncOp {
       }
     | { kind: "order.serve"; orderId: string }
     | { kind: "session.close"; sessionId: string }
-    | { kind: "item.availability"; itemId: string; available: boolean };
+    | { kind: "item.availability"; itemId: string; available: boolean }
+    | {
+        kind: "payment.record";
+        sessionId: string;
+        method: string;
+        amountSen?: Sen;
+        tenderedSen?: Sen;
+        reference?: string;
+        expectedDueSen?: Sen;
+        printedLocally?: boolean;
+      }
+    | {
+        kind: "bill.discount";
+        sessionId: string;
+        amountSen: Sen;
+        reason: string;
+      };
 }
 
 export interface SyncOpResult {
@@ -249,6 +270,13 @@ function renderJob(payloadJson: string, outletName: string): string {
     totalSen?: number;
     itemCount?: number;
     method?: string;
+    receiptNo?: number;
+    cashReceivedSen?: number;
+    changeSen?: number;
+    roundingSen?: number;
+    discountSen?: number;
+    paidSen?: number;
+    balanceSen?: number;
   };
 
   const bytes =
@@ -262,6 +290,16 @@ function renderJob(payloadJson: string, outletName: string): string {
           totalSen: payload.totalSen ?? 0,
           itemCount: payload.itemCount,
           method: payload.method,
+          // Everything below was being dropped here, which is why the paid
+          // branch of the renderer has been fully written and fully tested
+          // since Phase 4 and has never once come out of a printer.
+          receiptNo: payload.receiptNo,
+          cashReceivedSen: payload.cashReceivedSen,
+          changeSen: payload.changeSen,
+          roundingSen: payload.roundingSen,
+          discountSen: payload.discountSen,
+          paidSen: payload.paidSen,
+          balanceSen: payload.balanceSen,
           reprint: payload.reprint === true,
         })
       : renderKitchenTicket({
@@ -1139,6 +1177,7 @@ export class OutletDO extends DurableObject<Env> {
         wifiPassword: null,
         localOrderUrl: null,
         menuVersion: 1,
+        receiptSeq: 0,
         updatedAt: 0,
       }
     );
@@ -2059,6 +2098,8 @@ export class OutletDO extends DurableObject<Env> {
         return { id: o.id, placedAt: o.placedAt, status: o.status, source: o.source, lines };
       });
 
+    const settlement = await this.settlementOf(session.id, totalSen);
+
     return {
       table: { id: table.id, label: table.label },
       session: {
@@ -2069,21 +2110,88 @@ export class OutletDO extends DurableObject<Env> {
         /** How many plates are on the table — the counter asks this first. */
         itemCount,
         orders: detail,
+        ...settlement,
       },
+    };
+  }
+
+  /**
+   * What is still owed on a bill, and how it got there.
+   *
+   * The single source of truth for "is this paid". There is deliberately no
+   * `paid` session status: five separate queries hardcode
+   * `["open", "bill_requested"]` to find a table's live bill, and a sixth
+   * state would mean finding all of them or watching a paid-but-unclosed
+   * table vanish off the floor map. Paid is arithmetic instead.
+   */
+  private async settlementOf(sessionId: string, totalSen: Sen) {
+    const [paid, discounts] = await Promise.all([
+      this.db
+        .select()
+        .from(schema.payments)
+        .where(eq(schema.payments.sessionId, sessionId)),
+      this.db
+        .select()
+        .from(schema.billDiscounts)
+        .where(eq(schema.billDiscounts.sessionId, sessionId)),
+    ]);
+
+    const live = paid.filter((p) => p.voidedAt === null);
+    const paidSen = live.reduce((sum, p) => sum + p.amountSen, 0);
+    const discountSen = discounts.reduce((sum, d) => sum + d.amountSen, 0);
+
+    return {
+      discountSen,
+      paidSen,
+      /** Never negative: an overpayment is change, not a credit. */
+      outstandingSen: Math.max(0, totalSen - discountSen - paidSen),
+      payments: live
+        .sort((a, b) => a.paidAt - b.paidAt)
+        .map((p) => ({
+          id: p.id,
+          method: p.method,
+          amountSen: p.amountSen,
+          tenderedSen: p.tenderedSen,
+          changeSen: p.changeSen,
+          roundingSen: p.roundingSen,
+          receiptNo: p.receiptNo,
+          reference: p.reference,
+          paidAt: p.paidAt,
+        })),
+      discounts: discounts
+        .sort((a, b) => a.at - b.at)
+        .map((d) => ({
+          id: d.id,
+          amountSen: d.amountSen,
+          reason: d.reason,
+          at: d.at,
+        })),
     };
   }
 
   /**
    * Print the bill for an open table.
    *
-   * Rendered from the session as it stands, at the counter station. `method`
-   * is left unset here because nothing has been paid yet: the customer asked
-   * for the bill, and Phase 6 will call this again with a method once money
-   * has actually changed hands.
+   * Rendered from the session as it stands, at the counter station.
+   *
+   * Called two ways. With no `method` it prints an unpaid BIL — the customer
+   * asked for it and nothing has been paid. With one, `recordPayment` is
+   * calling it after money changed hands, and everything below it needs to
+   * reach the paper: the receipt number, what was tendered, the change, the
+   * rounding, any discount, and the balance still owing on a split.
    */
   async queueReceipt(input: {
     sessionId: string;
     method?: string;
+    receiptNo?: number;
+    tenderedSen?: Sen;
+    changeSen?: Sen;
+    roundingSen?: Sen;
+    discountSen?: Sen;
+    /** This payment's own amount. Differs from the due total on a split. */
+    paidSen?: Sen;
+    /** Above zero prints a part-payment slip rather than a closing receipt. */
+    balanceSen?: Sen;
     userId?: string;
   }): Promise<
     | { ok: true; jobId: string; totalSen: Sen; itemCount: number }
@@ -2140,6 +2248,15 @@ export class OutletDO extends DurableObject<Env> {
         totalSen: detail.session.totalSen,
         itemCount: detail.session.itemCount,
         ...(input.method ? { method: input.method } : {}),
+        ...(input.receiptNo !== undefined ? { receiptNo: input.receiptNo } : {}),
+        ...(input.tenderedSen !== undefined
+          ? { cashReceivedSen: input.tenderedSen }
+          : {}),
+        ...(input.changeSen !== undefined ? { changeSen: input.changeSen } : {}),
+        ...(input.roundingSen ? { roundingSen: input.roundingSen } : {}),
+        ...(input.discountSen ? { discountSen: input.discountSen } : {}),
+        ...(input.paidSen !== undefined ? { paidSen: input.paidSen } : {}),
+        ...(input.balanceSen ? { balanceSen: input.balanceSen } : {}),
       }),
       status: "queued",
       attempts: 0,
@@ -2164,6 +2281,403 @@ export class OutletDO extends DurableObject<Env> {
       totalSen: detail.session.totalSen,
       itemCount: detail.session.itemCount,
     };
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Money
+   * ---------------------------------------------------------------- */
+
+  /**
+   * Record money changing hands, and close the bill if that settles it.
+   *
+   * One call, on purpose. A payment that lands without the bill closing, or a
+   * bill that closes without the payment landing, are both states somebody
+   * has to notice and fix during service — and the Durable Object is
+   * single-threaded, so doing both here means they cannot come apart.
+   *
+   * It also means the receipt is queued while the session is still readable.
+   * `getSessionDetail` only matches open sessions, so a receipt built after
+   * the close would have nothing to read.
+   *
+   * **The till does not state the total.** Leave `amountSen` off and this
+   * settles whatever is outstanding, worked out here from the outlet's own
+   * orders and discounts. Pass one and it is taken as an instruction — "this
+   * customer is putting in RM 20" — which is a different thing from choosing
+   * a price. `expectedDueSen` rides along only so a disagreement gets audited,
+   * exactly as a replayed order's total does.
+   */
+  async recordPayment(input: {
+    sessionId: string;
+    method: "cash" | "duitnow_qr" | string;
+    /** Omit to settle the rest. Present for a split. */
+    amountSen?: Sen;
+    /** Cash only: what the customer handed over. */
+    tenderedSen?: Sen;
+    reference?: string;
+    clientUlid?: string;
+    /** What the till showed. Never billed from — audited when it disagrees. */
+    expectedDueSen?: Sen;
+    /** The tablet already printed the slip itself. */
+    printedLocally?: boolean;
+    userId?: string;
+    deviceId?: string;
+  }): Promise<
+    | {
+        ok: true;
+        paymentId: string;
+        receiptNo: number;
+        amountSen: Sen;
+        changeSen: Sen;
+        roundingSen: Sen;
+        balanceSen: Sen;
+        settled: boolean;
+        duplicate: boolean;
+        jobId?: string;
+      }
+    | {
+        ok: false;
+        error: "not_found" | "already_settled" | "bad_amount" | "short_tender";
+      }
+  > {
+    // Replay lands once. The tablet mints the ULID before its first attempt
+    // and reuses it on retry, so a lost reply on a flaky line cannot take a
+    // customer's money twice.
+    if (input.clientUlid) {
+      const existing = (
+        await this.db
+          .select()
+          .from(schema.payments)
+          .where(eq(schema.payments.clientUlid, input.clientUlid))
+          .limit(1)
+      )[0];
+      if (existing) {
+        const session = await this.sessionById(existing.sessionId);
+        const detail = session ? await this.getSessionDetail(session.tableId) : null;
+        return {
+          ok: true,
+          paymentId: existing.id,
+          receiptNo: existing.receiptNo ?? 0,
+          amountSen: existing.amountSen,
+          changeSen: existing.changeSen ?? 0,
+          roundingSen: existing.roundingSen,
+          balanceSen: detail?.session?.outstandingSen ?? 0,
+          settled: !detail?.session,
+          duplicate: true,
+        };
+      }
+    }
+
+    const session = await this.sessionById(input.sessionId);
+    if (!session) return { ok: false, error: "not_found" };
+    // A bill that is already closed was already paid for, and telling the
+    // cashier that is more use than telling them the bill does not exist —
+    // the second till at a busy counter needs to know somebody beat it to it,
+    // not go looking for a table that is standing right there.
+    if (session.status === "closed") {
+      return { ok: false, error: "already_settled" };
+    }
+
+    const detail = await this.getSessionDetail(session.tableId);
+    if (!detail?.session || detail.session.id !== session.id) {
+      return { ok: false, error: "not_found" };
+    }
+
+    const outstanding = detail.session.outstandingSen;
+    if (outstanding <= 0) return { ok: false, error: "already_settled" };
+
+    const settlingTheRest = input.amountSen === undefined;
+    const asked = input.amountSen ?? outstanding;
+    if (!Number.isInteger(asked) || asked <= 0 || asked > outstanding) {
+      return { ok: false, error: "bad_amount" };
+    }
+
+    // Rounding is cash-only, and only when the cash is clearing the bill.
+    // Bank Negara's rule is about the total of a bill paid over the counter,
+    // not about every amount that passes through a drawer — a cashier typing
+    // an explicit RM 20 towards a split has already chosen a round number.
+    const roundingSen =
+      input.method === "cash" && settlingTheRest ? cashRoundingSen(asked) : 0;
+    const amountSen = asked + roundingSen;
+
+    let changeSen = 0;
+    if (input.method === "cash" && input.tenderedSen !== undefined) {
+      if (!Number.isInteger(input.tenderedSen) || input.tenderedSen < amountSen) {
+        // Refuse rather than silently record a payment larger than the money
+        // on the counter, which is how a drawer ends the day short.
+        return { ok: false, error: "short_tender" };
+      }
+      changeSen = input.tenderedSen - amountSen;
+    }
+
+    const balanceSen = outstanding - amountSen;
+    const settled = balanceSen <= 0;
+    const now = Date.now();
+    const receiptNo = await this.nextReceiptNo();
+    const paymentId = id("pay");
+
+    await this.db.insert(schema.payments).values({
+      id: paymentId,
+      sessionId: session.id,
+      method: input.method,
+      amountSen,
+      tenderedSen: input.tenderedSen ?? null,
+      changeSen: input.tenderedSen === undefined ? null : changeSen,
+      roundingSen,
+      reference: input.reference ?? null,
+      confirmedByUserId: input.userId ?? null,
+      deviceId: input.deviceId ?? null,
+      clientUlid: input.clientUlid ?? null,
+      receiptNo,
+      voidedAt: null,
+      voidReason: null,
+      paidAt: now,
+    });
+
+    await this.audit(
+      "payment.recorded",
+      JSON.stringify({
+        paymentId,
+        sessionId: session.id,
+        method: input.method,
+        amountSen,
+        roundingSen,
+        receiptNo,
+      }),
+      input.userId,
+    );
+
+    // The till's number and the server's should agree. When they do not,
+    // somebody edited a price mid-service — record it rather than let it
+    // surface as an unexplained few ringgit at the end of the month.
+    if (
+      input.expectedDueSen !== undefined &&
+      input.expectedDueSen !== outstanding
+    ) {
+      await this.audit(
+        "payment.due_divergence",
+        JSON.stringify({
+          paymentId,
+          tillDueSen: input.expectedDueSen,
+          serverDueSen: outstanding,
+        }),
+        input.userId,
+      );
+    }
+
+    // The slip: a receipt when this clears the bill, a part-payment slip when
+    // it does not. Both kick the drawer for cash, because either way the
+    // cashier has money in their hand that has to go somewhere.
+    let jobId: string | undefined;
+    if (input.printedLocally !== true) {
+      const queued = await this.queueReceipt({
+        sessionId: session.id,
+        method: input.method,
+        userId: input.userId,
+        receiptNo,
+        tenderedSen: input.tenderedSen,
+        changeSen: input.tenderedSen === undefined ? undefined : changeSen,
+        roundingSen,
+        discountSen: detail.session.discountSen,
+        paidSen: amountSen,
+        balanceSen: Math.max(0, balanceSen),
+      });
+      // A restaurant with no counter station configured still takes money.
+      // The payment is the record; the paper is a convenience, and refusing
+      // the sale because a printer is missing would be the wrong trade.
+      if (queued.ok) jobId = queued.jobId;
+    }
+
+    if (settled) {
+      await this.closeSession({ sessionId: session.id, userId: input.userId });
+    } else {
+      broadcast(this.ctx, {
+        type: "payment.recorded",
+        tableId: session.tableId,
+        sessionId: session.id,
+        amountSen,
+        balanceSen,
+      });
+    }
+
+    return {
+      ok: true,
+      paymentId,
+      receiptNo,
+      amountSen,
+      changeSen,
+      roundingSen,
+      balanceSen: Math.max(0, balanceSen),
+      settled,
+      duplicate: false,
+      jobId,
+    };
+  }
+
+  /**
+   * Reverse a payment that should not have been taken.
+   *
+   * Voided rather than deleted, and the session reopens if this was the
+   * payment that closed it — a cashier who keys RM 100 instead of RM 10 needs
+   * the table back, and a deleted row would hide that the mistake happened.
+   */
+  async voidPayment(input: {
+    paymentId: string;
+    reason: string;
+    userId?: string;
+  }): Promise<
+    | { ok: true; sessionReopened: boolean }
+    | { ok: false; error: "not_found" | "already_void" | "reason_required" }
+  > {
+    if (!input.reason.trim()) return { ok: false, error: "reason_required" };
+
+    const payment = (
+      await this.db
+        .select()
+        .from(schema.payments)
+        .where(eq(schema.payments.id, input.paymentId))
+        .limit(1)
+    )[0];
+    if (!payment) return { ok: false, error: "not_found" };
+    if (payment.voidedAt !== null) return { ok: false, error: "already_void" };
+
+    await this.db
+      .update(schema.payments)
+      .set({ voidedAt: Date.now(), voidReason: input.reason.trim() })
+      .where(eq(schema.payments.id, payment.id));
+
+    await this.audit(
+      "payment.voided",
+      JSON.stringify({
+        paymentId: payment.id,
+        sessionId: payment.sessionId,
+        amountSen: payment.amountSen,
+        reason: input.reason.trim(),
+      }),
+      input.userId,
+    );
+
+    const session = await this.sessionById(payment.sessionId);
+    let sessionReopened = false;
+    if (session && session.status === "closed") {
+      await this.db
+        .update(schema.tableSessions)
+        .set({ status: "bill_requested", closedAt: null })
+        .where(eq(schema.tableSessions.id, session.id));
+      await this.db
+        .update(schema.tables)
+        .set({ status: "bill_requested" })
+        .where(eq(schema.tables.id, session.tableId));
+      sessionReopened = true;
+      broadcast(this.ctx, {
+        type: "bill.requested",
+        tableId: session.tableId,
+        sessionId: session.id,
+        totalSen: 0,
+      });
+    }
+
+    return { ok: true, sessionReopened };
+  }
+
+  /**
+   * Take an amount off a bill without anybody paying it.
+   *
+   * A reason is compulsory and who gave it is recorded, because the only
+   * thing separating a discount from money going missing is that somebody
+   * put their name to it.
+   */
+  async applyDiscount(input: {
+    sessionId: string;
+    amountSen: Sen;
+    reason: string;
+    userId?: string;
+  }): Promise<
+    | { ok: true; discountId: string; outstandingSen: Sen }
+    | {
+        ok: false;
+        error: "not_found" | "reason_required" | "bad_amount" | "too_large";
+      }
+  > {
+    if (!input.reason.trim()) return { ok: false, error: "reason_required" };
+    if (!Number.isInteger(input.amountSen) || input.amountSen <= 0) {
+      return { ok: false, error: "bad_amount" };
+    }
+
+    const session = await this.sessionById(input.sessionId);
+    if (!session || session.status === "closed") {
+      return { ok: false, error: "not_found" };
+    }
+    const detail = await this.getSessionDetail(session.tableId);
+    if (!detail?.session || detail.session.id !== session.id) {
+      return { ok: false, error: "not_found" };
+    }
+    // A discount bigger than what is left owing would turn the bill negative,
+    // which is a refund — a different thing, and not one this handles.
+    if (input.amountSen > detail.session.outstandingSen) {
+      return { ok: false, error: "too_large" };
+    }
+
+    const discountId = id("dsc");
+    await this.db.insert(schema.billDiscounts).values({
+      id: discountId,
+      sessionId: session.id,
+      amountSen: input.amountSen,
+      reason: input.reason.trim(),
+      givenByUserId: input.userId ?? null,
+      at: Date.now(),
+    });
+
+    await this.audit(
+      "bill.discounted",
+      JSON.stringify({
+        sessionId: session.id,
+        amountSen: input.amountSen,
+        reason: input.reason.trim(),
+      }),
+      input.userId,
+    );
+
+    broadcast(this.ctx, {
+      type: "bill.discounted",
+      tableId: session.tableId,
+      sessionId: session.id,
+      amountSen: input.amountSen,
+    });
+
+    return {
+      ok: true,
+      discountId,
+      outstandingSen: detail.session.outstandingSen - input.amountSen,
+    };
+  }
+
+  /** One session row by id, whatever its status. */
+  private async sessionById(sessionId: string) {
+    return (
+      await this.db
+        .select()
+        .from(schema.tableSessions)
+        .where(eq(schema.tableSessions.id, sessionId))
+        .limit(1)
+    )[0];
+  }
+
+  /**
+   * The next receipt number for this outlet.
+   *
+   * Monotonic and never reset. A number that restarts each morning lets two
+   * receipts share an identifier, which is the one thing a receipt number
+   * exists to prevent. Safe without a lock because a Durable Object handles
+   * one request at a time.
+   */
+  private async nextReceiptNo(): Promise<number> {
+    const settings = await this.getSettings();
+    const next = (settings.receiptSeq ?? 0) + 1;
+    await this.db
+      .update(schema.settings)
+      .set({ receiptSeq: next })
+      .where(eq(schema.settings.id, 1));
+    return next;
   }
 
   /**
@@ -2425,6 +2939,60 @@ export class OutletDO extends DurableObject<Env> {
         return { clientUlid: op.clientUlid, status: "applied" };
       }
 
+      case "payment.record": {
+        // The op's own ULID is the payment's ULID, so a batch replayed after
+        // a lost reply lands exactly one payment. The dedup lives on the
+        // payments table's UNIQUE index rather than only in the op log,
+        // because money is the one thing that must not depend on two
+        // mechanisms agreeing.
+        const paid = await this.recordPayment({
+          sessionId: body.sessionId,
+          method: body.method,
+          amountSen: body.amountSen,
+          tenderedSen: body.tenderedSen,
+          reference: body.reference,
+          expectedDueSen: body.expectedDueSen,
+          printedLocally: body.printedLocally,
+          clientUlid: op.clientUlid,
+          userId,
+          deviceId: op.deviceId,
+        });
+        if (!paid.ok) {
+          // already_settled is the outcome this op wanted: somebody else got
+          // there first. The rest can never come good — the bill is gone, or
+          // the amount was impossible — so the device must stop retrying.
+          await this.recordOp(op, { sessionId: body.sessionId });
+          return {
+            clientUlid: op.clientUlid,
+            status: paid.error === "already_settled" ? "duplicate" : "rejected",
+            error: paid.error,
+          };
+        }
+        await this.recordOp(op, {
+          sessionId: body.sessionId,
+          paymentId: paid.paymentId,
+        });
+        return {
+          clientUlid: op.clientUlid,
+          status: paid.duplicate ? "duplicate" : "applied",
+        };
+      }
+
+      case "bill.discount": {
+        const given = await this.applyDiscount({
+          sessionId: body.sessionId,
+          amountSen: body.amountSen,
+          reason: body.reason,
+          userId,
+        });
+        await this.recordOp(op, { sessionId: body.sessionId });
+        return {
+          clientUlid: op.clientUlid,
+          status: given.ok ? "applied" : "rejected",
+          ...(given.ok ? {} : { error: given.error }),
+        };
+      }
+
       case "session.close": {
         const closed = await this.closeSession({
           sessionId: body.sessionId,
@@ -2641,6 +3209,24 @@ export class OutletDO extends DurableObject<Env> {
     byHour: { hour: number; salesSen: Sen; orderCount: number }[];
     byCategory: { categoryId: string; nameMs: string; nameEn: string; salesSen: Sen; qty: number }[];
     byItem: { menuItemId: string; nameMs: string; nameEn: string; salesSen: Sen; qty: number }[];
+    /**
+     * What was actually taken, which is not what was sold.
+     *
+     * Sales are what left the kitchen; collections are what reached the
+     * drawer. They differ by discounts and by bills still open, and a screen
+     * that shows only one of them will eventually be used to answer a
+     * question it cannot answer.
+     */
+    collectedSen: Sen;
+    byMethod: { method: string; totalSen: Sen; count: number }[];
+    discountSen: Sen;
+    closing: {
+      openingFloatSen: Sen;
+      expectedCashSen: Sen;
+      countedCashSen: Sen | null;
+      varianceSen: Sen | null;
+      closedAt: number | null;
+    } | null;
   }> {
     const timeZone = input.timeZone ?? "Asia/Kuala_Lumpur";
 
@@ -2718,6 +3304,8 @@ export class OutletDO extends DurableObject<Env> {
       }
     }
 
+    const money = await this.dayCash({ date: input.date, timeZone });
+
     return {
       date: input.date,
       salesSen,
@@ -2727,6 +3315,208 @@ export class OutletDO extends DurableObject<Env> {
       byHour: [...hours.values()].sort((a, b) => a.hour - b.hour),
       byCategory: [...cats.values()].sort((a, b) => b.salesSen - a.salesSen),
       byItem: [...dishes.values()].sort((a, b) => b.salesSen - a.salesSen),
+      collectedSen: money.collectedSen,
+      byMethod: money.byMethod,
+      discountSen: money.discountSen,
+      closing: money.closing,
+    };
+  }
+
+  /* ---------------------------------------------------------------- *
+   * The day's money
+   *
+   * Derived from the payments themselves, exactly as the sales figures are
+   * derived from the orders: right retroactively, impossible to drift, and
+   * with no nightly job that can fail quietly.
+   * ---------------------------------------------------------------- */
+
+  /** What came in on one day, and how the drawer was left. */
+  async dayCash(input: { date: string; timeZone?: string }): Promise<{
+    date: string;
+    collectedSen: Sen;
+    byMethod: { method: string; totalSen: Sen; count: number }[];
+    discountSen: Sen;
+    cashSen: Sen;
+    closing: {
+      openingFloatSen: Sen;
+      expectedCashSen: Sen;
+      countedCashSen: Sen | null;
+      varianceSen: Sen | null;
+      closedAt: number | null;
+    } | null;
+  }> {
+    const timeZone = input.timeZone ?? "Asia/Kuala_Lumpur";
+    const anchor = Date.parse(`${input.date}T00:00:00Z`);
+    const from = Number.isNaN(anchor) ? Date.now() : anchor - 129_600_000;
+
+    const rows = await this.db
+      .select()
+      .from(schema.payments)
+      .where(gte(schema.payments.paidAt, from));
+    const live = rows.filter(
+      (p) =>
+        p.voidedAt === null &&
+        OutletDO.localDate(p.paidAt, timeZone) === input.date,
+    );
+
+    const byMethod = new Map<string, { method: string; totalSen: Sen; count: number }>();
+    for (const payment of live) {
+      const entry = byMethod.get(payment.method) ?? {
+        method: payment.method,
+        totalSen: 0,
+        count: 0,
+      };
+      entry.totalSen += payment.amountSen;
+      entry.count += 1;
+      byMethod.set(payment.method, entry);
+    }
+
+    const discounts = (
+      await this.db.select().from(schema.billDiscounts).where(gte(schema.billDiscounts.at, from))
+    ).filter((d) => OutletDO.localDate(d.at, timeZone) === input.date);
+
+    const cashSen = byMethod.get("cash")?.totalSen ?? 0;
+    const closingRow = (
+      await this.db
+        .select()
+        .from(schema.dailyClosings)
+        .where(eq(schema.dailyClosings.date, input.date))
+        .limit(1)
+    )[0];
+
+    const openingFloatSen = closingRow?.openingFloatSen ?? 0;
+    // Tendered minus change is already netted into amount_sen, so the drawer
+    // should hold the float plus exactly the cash recorded against the day.
+    const expectedCashSen = openingFloatSen + cashSen;
+
+    return {
+      date: input.date,
+      collectedSen: live.reduce((sum, p) => sum + p.amountSen, 0),
+      byMethod: [...byMethod.values()].sort((a, b) => b.totalSen - a.totalSen),
+      discountSen: discounts.reduce((sum, d) => sum + d.amountSen, 0),
+      cashSen,
+      closing: closingRow
+        ? {
+            openingFloatSen,
+            expectedCashSen,
+            countedCashSen: closingRow.cashCountedSen,
+            varianceSen: closingRow.varianceSen,
+            closedAt: closingRow.closedAt,
+          }
+        : { openingFloatSen: 0, expectedCashSen, countedCashSen: null, varianceSen: null, closedAt: null },
+    };
+  }
+
+  /** Record the cash the drawer started the day with. */
+  async openDay(input: {
+    date: string;
+    openingFloatSen: Sen;
+    userId?: string;
+  }): Promise<{ ok: true } | { ok: false; error: "bad_amount" | "already_closed" }> {
+    if (!Number.isInteger(input.openingFloatSen) || input.openingFloatSen < 0) {
+      return { ok: false, error: "bad_amount" };
+    }
+    const existing = (
+      await this.db
+        .select()
+        .from(schema.dailyClosings)
+        .where(eq(schema.dailyClosings.date, input.date))
+        .limit(1)
+    )[0];
+    // Changing the float after the count would rewrite the variance into
+    // whatever anybody wanted it to be.
+    if (existing?.closedAt) return { ok: false, error: "already_closed" };
+
+    if (existing) {
+      await this.db
+        .update(schema.dailyClosings)
+        .set({ openingFloatSen: input.openingFloatSen })
+        .where(eq(schema.dailyClosings.date, input.date));
+    } else {
+      await this.db
+        .insert(schema.dailyClosings)
+        .values({ date: input.date, openingFloatSen: input.openingFloatSen });
+    }
+
+    await this.audit(
+      "day.opened",
+      JSON.stringify({ date: input.date, openingFloatSen: input.openingFloatSen }),
+      input.userId,
+    );
+    return { ok: true };
+  }
+
+  /**
+   * Count the drawer and close the day.
+   *
+   * The variance is recorded whether or not it is comfortable. A close that
+   * only stores agreeable numbers is a close nobody can rely on.
+   */
+  async closeDay(input: {
+    date: string;
+    cashCountedSen: Sen;
+    timeZone?: string;
+    userId?: string;
+  }): Promise<
+    | {
+        ok: true;
+        expectedCashSen: Sen;
+        countedCashSen: Sen;
+        varianceSen: Sen;
+      }
+    | { ok: false; error: "bad_amount" }
+  > {
+    if (!Number.isInteger(input.cashCountedSen) || input.cashCountedSen < 0) {
+      return { ok: false, error: "bad_amount" };
+    }
+
+    const money = await this.dayCash({ date: input.date, timeZone: input.timeZone });
+    const expectedCashSen = money.closing?.expectedCashSen ?? 0;
+    const varianceSen = input.cashCountedSen - expectedCashSen;
+    const now = Date.now();
+
+    const existing = (
+      await this.db
+        .select()
+        .from(schema.dailyClosings)
+        .where(eq(schema.dailyClosings.date, input.date))
+        .limit(1)
+    )[0];
+
+    const values = {
+      cashCountedSen: input.cashCountedSen,
+      expectedSen: expectedCashSen,
+      varianceSen,
+      closedByUserId: input.userId ?? null,
+      closedAt: now,
+    };
+    if (existing) {
+      await this.db
+        .update(schema.dailyClosings)
+        .set(values)
+        .where(eq(schema.dailyClosings.date, input.date));
+    } else {
+      await this.db
+        .insert(schema.dailyClosings)
+        .values({ date: input.date, openingFloatSen: 0, ...values });
+    }
+
+    await this.audit(
+      "day.closed",
+      JSON.stringify({
+        date: input.date,
+        expectedCashSen,
+        countedCashSen: input.cashCountedSen,
+        varianceSen,
+      }),
+      input.userId,
+    );
+
+    return {
+      ok: true,
+      expectedCashSen,
+      countedCashSen: input.cashCountedSen,
+      varianceSen,
     };
   }
 

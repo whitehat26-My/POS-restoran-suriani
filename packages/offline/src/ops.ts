@@ -55,7 +55,48 @@ export type OpBody =
     }
   | { kind: "order.serve"; orderId: string }
   | { kind: "session.close"; sessionId: string }
-  | { kind: "item.availability"; itemId: string; available: boolean };
+  | { kind: "item.availability"; itemId: string; available: boolean }
+  | {
+      /**
+       * Money changed hands at the counter.
+       *
+       * The most ordinary thing a cashier does, and until this existed it was
+       * the one action that could not be taken with the line down — the bill
+       * sheet talked to the server directly while every other action went
+       * through the outbox.
+       */
+      kind: "payment.record";
+      sessionId: string;
+      method: "cash" | "duitnow_qr";
+      /**
+       * Leave this off to settle the rest of the bill.
+       *
+       * Absent means "whatever is outstanding", and the server works that out
+       * from its own orders and discounts — the till never states a total.
+       * Present is an instruction rather than a price: this customer is
+       * putting in RM 20 towards a split.
+       */
+      amountSen?: Sen;
+      /** Cash only: what was handed over, so the slip can show the change. */
+      tenderedSen?: Sen;
+      /** A DuitNow reference, if the cashier bothered to note one down. */
+      reference?: string;
+      /**
+       * What the till showed as owing. Never billed from — recorded so that a
+       * disagreement with the server is audited rather than discovered in the
+       * accounts a month later, exactly as `expectedTotalSen` is for orders.
+       */
+      expectedDueSen?: Sen;
+      /** The tablet already printed the slip and kicked its own drawer. */
+      printedLocally?: boolean;
+    }
+  | {
+      /** Money taken off a bill. The reason is not optional. */
+      kind: "bill.discount";
+      sessionId: string;
+      amountSen: Sen;
+      reason: string;
+    };
 
 /** One entry in the device's append-only log. */
 export interface Op {

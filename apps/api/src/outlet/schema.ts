@@ -131,6 +131,8 @@ export const settings = sqliteTable("settings", {
   localOrderUrl: text("local_order_url"),
   /** Bumped on any menu change; phones refetch when they see it move. */
   menuVersion: integer("menu_version").notNull().default(1),
+  /** Last receipt number issued. Monotonic, never reset. */
+  receiptSeq: integer("receipt_seq").notNull().default(0),
   updatedAt: integer("updated_at").notNull().default(0),
 });
 
@@ -193,6 +195,14 @@ export const orderItems = sqliteTable(
   (t) => [index("idx_order_items_order").on(t.orderId)],
 );
 
+/**
+ * Money that changed hands.
+ *
+ * A list against the bill rather than a column on it, which is what makes a
+ * split fall out for free: two people paying RM 20 and RM 12 is two rows, and
+ * a bill paid half in cash and half by QR is two rows too. The bill is settled
+ * when they add up, not when a flag says so.
+ */
 export const payments = sqliteTable(
   "payments",
   {
@@ -200,12 +210,49 @@ export const payments = sqliteTable(
     sessionId: text("session_id").notNull(),
     /** cash | duitnow_qr | gateway */
     method: text("method").notNull(),
+    /** What came off the bill, after any cash rounding. */
     amountSen: integer("amount_sen").notNull(),
+    /** Cash: what the customer handed over. */
+    tenderedSen: integer("tendered_sen"),
+    /** Cash: what was handed back. tendered − change === amountSen. */
+    changeSen: integer("change_sen"),
+    /** The 5 sen adjustment, signed. Kept so a day reconciles to the sen. */
+    roundingSen: integer("rounding_sen").notNull().default(0),
     reference: text("reference"),
     confirmedByUserId: text("confirmed_by_user_id"),
+    /** Which tablet took it, for the same reason op_log records one. */
+    deviceId: text("device_id"),
+    /** Minted on the device before the first attempt; replay lands once. */
+    clientUlid: text("client_ulid"),
+    /** Printed on the slip. Monotonic per outlet, never reset. */
+    receiptNo: integer("receipt_no"),
+    /** Reversed, not deleted — a mis-keyed payment must stay visible. */
+    voidedAt: integer("voided_at"),
+    voidReason: text("void_reason"),
     paidAt: integer("paid_at").notNull(),
   },
   (t) => [index("idx_payments_session").on(t.sessionId)],
+);
+
+/**
+ * Money taken off a bill without anybody paying it.
+ *
+ * Deliberately not a negative payment: that would balance the cash drawer
+ * while the books quietly claimed less was sold than actually left the
+ * kitchen. A reason is required, and who gave it is recorded, because the
+ * difference between a discount and money going missing is exactly that.
+ */
+export const billDiscounts = sqliteTable(
+  "bill_discounts",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id").notNull(),
+    amountSen: integer("amount_sen").notNull(),
+    reason: text("reason").notNull(),
+    givenByUserId: text("given_by_user_id"),
+    at: integer("at").notNull(),
+  },
+  (t) => [index("idx_bill_discounts_session").on(t.sessionId)],
 );
 
 /** Where a slip prints. Kitchen, drinks, counter — one row each. */
@@ -289,6 +336,14 @@ export const auditLog = sqliteTable("audit_log", {
   at: integer("at").notNull(),
 });
 
+/**
+ * One restaurant-day's cash count.
+ *
+ * Day-keyed rather than shift-keyed because this restaurant trades one shift.
+ * Expected is the opening float plus every cash payment taken; the variance is
+ * what the drawer is over or short, and it is the only number in the system
+ * that can tell the owner something is wrong before the month's accounts do.
+ */
 export const dailyClosings = sqliteTable("daily_closings", {
   date: text("date").primaryKey(),
   openingFloatSen: integer("opening_float_sen").notNull().default(0),

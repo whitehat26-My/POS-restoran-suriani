@@ -65,6 +65,27 @@ export type OutletEvent =
   | { type: "bill.requested"; tableId: string; sessionId: string; totalSen: Sen }
   | { type: "waiter.called"; tableId: string; tableLabel: string }
   | { type: "session.closed"; tableId: string; sessionId: string }
+  /**
+   * Part of a bill has been settled.
+   *
+   * Only fires when the bill is *not* cleared — a payment that settles it
+   * closes the session, and `session.closed` already says so. This is what
+   * colours a table mid-split, so a second cashier does not walk up and ask
+   * for the full amount again.
+   */
+  | {
+      type: "payment.recorded";
+      tableId: string;
+      sessionId: string;
+      amountSen: Sen;
+      balanceSen: Sen;
+    }
+  | {
+      type: "bill.discounted";
+      tableId: string;
+      sessionId: string;
+      amountSen: Sen;
+    }
   | {
       type: "item.availability";
       itemId: string;
