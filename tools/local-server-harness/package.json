@@ -1,0 +1,13 @@
+{
+  "name": "@suriani/local-server-harness",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The tablet's web server without the tablet: the real router on a real socket, so the local ordering path can be driven by a real browser in CI.",
+  "scripts": {
+    "build": "esbuild index.ts --bundle --platform=node --format=esm --outfile=dist.mjs --external:node:* --alias:@suriani/localserver=../../packages/localserver/src/index.ts --alias:@suriani/core/stations=../../packages/core/src/stations.ts --alias:@suriani/core/money=../../packages/core/src/money.ts --alias:@suriani/escpos/templates=../../packages/escpos/src/templates.ts"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}

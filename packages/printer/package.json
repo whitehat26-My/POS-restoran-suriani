@@ -1,0 +1,16 @@
+{
+  "name": "@suriani/printer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The print agent that runs on the tablet: claim, print over the first transport that answers, ack. LAN first, Bluetooth when the router dies.",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}

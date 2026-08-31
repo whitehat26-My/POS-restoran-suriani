@@ -1,0 +1,22 @@
+{
+  "name": "@suriani/offline",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The till's offline spine: an append-only op log, a durable outbox, and a sync loop. Runs in a browser today and inside the Android WebView unchanged.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./store": "./src/store.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@suriani/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}

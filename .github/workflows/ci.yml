@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: typecheck · lint · test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # The tenant door: env.OUTLET.get may appear in exactly one file.
+      # Runs first and on its own, because a cross-tenant leak is the one
+      # failure this product cannot ship, and the message should not be buried
+      # under unrelated test output.
+      - name: Guard tenant isolation boundary
+        run: pnpm --filter @suriani/api guard
+
+      # The Phase 0 prototype carries its own copy of the menu and is the
+      # first thing anyone opens, because it is the only file that works by
+      # double-clicking. A stale one is worse than none, so it is generated
+      # from seed-data.ts and CI refuses a drifted copy.
+      - name: Prototype menu is in step with the real one
+        run: node --experimental-strip-types scripts/sync-prototype-menu.mjs --check
+
+      # Builds both web apps (each runs its own tsc) and assembles the
+      # Worker's assets directory, so tests run against the real thing.
+      - name: Build web apps
+        run: pnpm build:web
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      # The tablet's own web server, bundled for node so the local ordering
+      # path can be driven by a real browser. Building it here is also the
+      # only compile check the harness gets, and it imports the same router,
+      # the same station grouping and the same docket templates the tablet
+      # runs — so a change that breaks the outage path fails here rather than
+      # in a restaurant.
+      - name: Build the local-server harness
+        run: pnpm harness
+
+      # ESC/POS golden bytes, the offline engine and the local server run in
+      # plain node; the API suite runs inside the real workerd runtime with
+      # real D1 and Durable Objects.
+      - name: Test
+        run: pnpm test

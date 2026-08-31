@@ -1,0 +1,157 @@
+/* ============================================================
+   SURIANI POS — DESIGN TOKENS
+   ------------------------------------------------------------
+   Single source of truth for colour, type, space and motion.
+   Phase 1 imports this file directly; the prototype inlines a
+   copy because a published artifact must be self-contained.
+
+   Direction: kopitiam enamelware. Palette drawn from Malaysian
+   enamel tableware and old kedai signage. Neutrals are biased
+   green rather than pure grey, so they read as chosen.
+
+   Theming a different restaurant means overriding the brand
+   block below. Nothing else should need to change.
+   ============================================================ */
+
+:root {
+  /* --- brand ------------------------------------------------ */
+  --enamel:      #0B5D48;   /* primary — enamel green          */
+  --enamel-deep: #073B2E;
+  --enamel-lift: #12795E;
+  --sambal:      #DC3B23;   /* the single accent — CTAs, alerts */
+  --sambal-deep: #A82A16;
+  --tarik:       #D9963A;   /* teh tarik amber — in progress   */
+  --pandan:      #3E9E62;   /* pandan — available, healthy     */
+
+  /* --- ground & neutrals ------------------------------------ */
+  --ink:          #101E19;
+  --paper:        #F6F4EC;
+  --surface:      #FFFFFF;
+  --surface-sunk: #EFEDE3;
+  --line:         #E0DED2;
+  --line-strong:  #CBC9BB;
+  --muted:        #6B7169;
+  --muted-soft:   #8C9189;
+
+  /* --- semantic (deliberately separate from the accent) ----- */
+  --ok:   var(--pandan);
+  --warn: var(--tarik);
+  --crit: var(--sambal);
+
+  /* Tag foregrounds are tokens, not theme-scoped selectors.
+     A colour whose only definition sits behind a [data-theme]
+     block never applies in the default un-stamped state. */
+  --tag-hot-fg:   #A82A16;
+  --tag-best-fg:  #8A5B12;
+  --tag-halal-fg: #226B3E;
+
+  /* --- type -------------------------------------------------
+     Monospace is not decoration: every price, table code,
+     order id and printed ticket uses it, because thermal
+     receipts are monospace. Digits that stack must align. */
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  --t-xs:   0.6875rem;
+  --t-sm:   0.8125rem;
+  --t-base: 0.9375rem;
+  --t-md:   1.0625rem;
+  --t-lg:   1.375rem;
+  --t-xl:   1.875rem;
+  --t-2xl:  2.75rem;
+
+  /* --- space ------------------------------------------------ */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px;
+
+  /* --- radius ----------------------------------------------- */
+  --r-sm: 6px; --r-md: 10px; --r-lg: 16px; --r-xl: 24px; --r-full: 999px;
+
+  /* --- elevation -------------------------------------------- */
+  --shadow-sm: 0 1px 2px rgba(16,30,25,.08);
+  --shadow-md: 0 4px 16px rgba(16,30,25,.10);
+  --shadow-lg: 0 18px 48px rgba(16,30,25,.18);
+
+  /* --- motion ----------------------------------------------- */
+  --ease:   cubic-bezier(.22,.61,.36,1);
+  --spring: cubic-bezier(.34,1.46,.64,1);
+  --fast: 150ms; --mid: 240ms;
+
+  /* --- cashier POS ------------------------------------------
+     The till deliberately commits to one dark look regardless
+     of viewer theme: less glare across a ten-hour shift. */
+  --pos-bg:     #0B1512;
+  --pos-panel:  #12211C;
+  --pos-raised: #1A2E27;
+  --pos-edge:   #234036;
+  --pos-text:   #E8EFEA;
+  --pos-muted:  #7E9188;
+
+  /* --- table states (POS floor map) ------------------------- */
+  --tbl-ordering: #3E7FD6;
+  --tbl-eating:   var(--pandan);
+  --tbl-bill:     var(--tarik);
+}
+
+/* The viewer has three states, not two: an explicit choice
+   stamps data-theme, and the default "system" setting stamps
+   nothing. Both dark paths must be handled. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink:          #EAEFE9;
+    --paper:        #0C1512;
+    --surface:      #14211C;
+    --surface-sunk: #101B17;
+    --line:         #24352E;
+    --line-strong:  #33473E;
+    --muted:        #93A29A;
+    --muted-soft:   #75857C;
+    --enamel:       #2E9B7B;
+    --enamel-deep:  #1B6C55;
+    --enamel-lift:  #48BE9A;
+    --sambal:       #F0654C;
+    --sambal-deep:  #C33A22;
+    --tarik:        #E8AC57;
+    --pandan:       #56BC7C;
+    --tag-hot-fg:   #F0654C;
+    --tag-best-fg:  #E8AC57;
+    --tag-halal-fg: #56BC7C;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+    --shadow-md: 0 4px 16px rgba(0,0,0,.45);
+    --shadow-lg: 0 18px 48px rgba(0,0,0,.6);
+  }
+}
+
+:root[data-theme="dark"] {
+  --ink:          #EAEFE9;
+  --paper:        #0C1512;
+  --surface:      #14211C;
+  --surface-sunk: #101B17;
+  --line:         #24352E;
+  --line-strong:  #33473E;
+  --muted:        #93A29A;
+  --muted-soft:   #75857C;
+  --enamel:       #2E9B7B;
+  --enamel-deep:  #1B6C55;
+  --enamel-lift:  #48BE9A;
+  --sambal:       #F0654C;
+  --sambal-deep:  #C33A22;
+  --tarik:        #E8AC57;
+  --pandan:       #56BC7C;
+  --tag-hot-fg:   #F0654C;
+  --tag-best-fg:  #E8AC57;
+  --tag-halal-fg: #56BC7C;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-md: 0 4px 16px rgba(0,0,0,.45);
+  --shadow-lg: 0 18px 48px rgba(0,0,0,.6);
+}
+
+/* Digits that stack in columns must align. */
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}

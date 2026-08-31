@@ -1,0 +1,440 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { formatMYR } from "@suriani/core/money";
+
+import {
+  callWaiter,
+  fetchStatus,
+  fetchTablePage,
+  placeOrder,
+  requestBill,
+  TableNotFoundError,
+  type MenuItem,
+  type TablePage,
+} from "./api";
+import {
+  appendPlaced,
+  cartTotalSen,
+  clearCart,
+  ensurePendingUlid,
+  loadCart,
+  loadPlaced,
+  newLine,
+  saveCart,
+  type CartState,
+  type PlacedSummary,
+} from "./cart";
+import { initialLang, makeT, persistLang, type Lang, type Key } from "./i18n";
+import { MenuScreen } from "./screens/MenuScreen";
+import { ItemSheet } from "./screens/ItemSheet";
+import { CartScreen } from "./screens/CartScreen";
+import { PlacedScreen } from "./screens/PlacedScreen";
+
+/** /t/:outletId/:qrToken — the URL printed on the table card. */
+function parsePath(): { outletId: string; qrToken: string } | null {
+  const m = location.pathname.match(/^\/t\/([^/]+)\/([^/]+)\/?$/);
+  return m ? { outletId: m[1]!, qrToken: m[2]! } : null;
+}
+
+type View = "menu" | "cart" | "placed";
+
+export function App() {
+  const path = useMemo(parsePath, []);
+  const [lang, setLang] = useState<Lang>(initialLang);
+  const t = useMemo(() => makeT(lang), [lang]);
+
+  const [page, setPage] = useState<TablePage | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  const [offline, setOffline] = useState(false);
+
+  const [cart, setCart] = useState<CartState>({ lines: [], pendingUlid: null });
+  const [placed, setPlaced] = useState<PlacedSummary[]>([]);
+  const [view, setView] = useState<View>("menu");
+  const [activeItem, setActiveItem] = useState<MenuItem | null>(null);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<Key | null>(null);
+  const [stage, setStage] = useState<1 | 2 | 3>(1);
+  /** The dish just added, and the line to drop if the customer says undo. */
+  const [undo, setUndo] = useState<{ lineId: string; name: string } | null>(null);
+  const [billRequested, setBillRequested] = useState(false);
+  const [settled, setSettled] = useState<{
+    paidSen: number;
+    receiptNo: number | null;
+  } | null>(null);
+  const [waiterCalled, setWaiterCalled] = useState(false);
+  const menuVersionRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!path) {
+      setNotFound(true);
+      return;
+    }
+    setCart(loadCart(path.qrToken));
+    setPlaced(loadPlaced(path.qrToken));
+    fetchTablePage(path.outletId, path.qrToken)
+      .then((p) => {
+        setPage(p);
+        setOffline(false);
+      })
+      .catch((err) => {
+        if (err instanceof TableNotFoundError) setNotFound(true);
+        // A network failure with a service-worker cache still resolves the
+        // fetch; reaching here means we are offline with nothing cached.
+        else setOffline(true);
+      });
+  }, [path]);
+
+  // The status poll: every ~12s while an order exists and the tab is
+  // visible. Cheap on purpose — a WebSocket per customer phone would open a
+  // long-lived surface to strangers and buy nothing at this cadence.
+  useEffect(() => {
+    if (!path || placed.length === 0) return;
+
+    let cancelled = false;
+    const tick = async () => {
+      if (document.hidden) return;
+      try {
+        const status = await fetchStatus(path.outletId, path.qrToken);
+        if (cancelled) return;
+
+        if (status.session) {
+          const orders = status.session.orders;
+          const allServed =
+            orders.length > 0 && orders.every((o) => o.status === "served");
+          const anyCooking = orders.some((o) => o.status === "printed");
+          setStage(allServed ? 3 : anyCooking ? 2 : 1);
+          setBillRequested(status.session.status === "bill_requested");
+        } else if (status.settled) {
+          // The cashier just took the money. This is the one moment the
+          // customer most wants the screen to say something, and until now it
+          // went blank.
+          setSettled({
+            paidSen: status.settled.paidSen,
+            receiptNo: status.settled.receiptNo,
+          });
+        }
+
+        // A moved menuVersion means the kedai changed something — an item
+        // 86'd, a price fixed. Refetch quietly so this phone matches reality.
+        if (
+          menuVersionRef.current !== null &&
+          status.menuVersion !== menuVersionRef.current
+        ) {
+          fetchTablePage(path.outletId, path.qrToken).then(setPage, () => {});
+        }
+        menuVersionRef.current = status.menuVersion;
+      } catch {
+        /* a failed poll is silence, not an error banner */
+      }
+    };
+
+    void tick();
+    const timer = window.setInterval(() => void tick(), 12_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [path, placed.length]);
+
+  const doBill = useCallback(() => {
+    if (!path) return;
+    requestBill(path.outletId, path.qrToken)
+      .then(() => setBillRequested(true))
+      .catch(() => setError("error_generic"));
+  }, [path]);
+
+  const doWaiter = useCallback(() => {
+    if (!path) return;
+    callWaiter(path.outletId, path.qrToken)
+      .then(() => {
+        setWaiterCalled(true);
+        window.setTimeout(() => setWaiterCalled(false), 60_000);
+      })
+      .catch(() => setError("error_generic"));
+  }, [path]);
+
+  const switchLang = useCallback((next: Lang) => {
+    persistLang(next);
+    setLang(next);
+    document.documentElement.lang = next;
+  }, []);
+
+  const updateCart = useCallback(
+    (next: CartState) => {
+      setCart(next);
+      if (path) saveCart(path.qrToken, next);
+    },
+    [path],
+  );
+
+  const dropLine = useCallback(
+    (lineId: string) =>
+      updateCart({
+        ...cart,
+        lines: cart.lines.filter((l) => l.lineId !== lineId),
+      }),
+    [cart, updateCart],
+  );
+
+  const setLineQty = useCallback(
+    (lineId: string, qty: number) => {
+      if (qty < 1) return dropLine(lineId);
+      updateCart({
+        ...cart,
+        lines: cart.lines.map((l) => (l.lineId === lineId ? { ...l, qty } : l)),
+      });
+    },
+    [cart, dropLine, updateCart],
+  );
+
+  const addLine = useCallback(
+    (item: MenuItem, qty: number, optionIds: string[], notes?: string) => {
+      const line = newLine(item, qty, optionIds, notes);
+      updateCart({ ...cart, lines: [...cart.lines, line] });
+      setActiveItem(null);
+      // Undo where the mistake happens. Tapping the wrong dish is the most
+      // common thing a customer will do on this screen, and without this the
+      // fix is three taps away in a cart they have to think to open.
+      setUndo({ lineId: line.lineId, name: lang === "ms" ? item.nameMs : item.nameEn });
+    },
+    [cart, lang, updateCart],
+  );
+
+  const submit = useCallback(async () => {
+    if (!path || !page || cart.lines.length === 0 || sending) return;
+    setSending(true);
+    setError(null);
+
+    // Minted once and persisted; a retry reuses it, so the server can never
+    // be tricked into two orders by a double tap or a flaky connection.
+    const clientUlid = ensurePendingUlid(cart);
+    updateCart({ ...cart, pendingUlid: clientUlid });
+
+    try {
+      const result = await placeOrder(
+        path.outletId,
+        path.qrToken,
+        cart.lines.map((l) => ({
+          menuItemId: l.menuItemId,
+          qty: l.qty,
+          notes: l.notes,
+          modifierOptionIds: l.optionIds.length ? l.optionIds : undefined,
+        })),
+        clientUlid,
+      );
+
+      const items = new Map(page.menu.items.map((i) => [i.id, i]));
+      const summary: PlacedSummary = {
+        orderId: result.orderId,
+        totalSen: result.totalSen,
+        at: Date.now(),
+        etaMin: Math.max(
+          ...cart.lines.map((l) => items.get(l.menuItemId)?.prepMinutes ?? 10),
+        ),
+        lines: cart.lines.map((l) => {
+          const item = items.get(l.menuItemId);
+          return {
+            name: lang === "ms" ? item?.nameMs ?? "?" : item?.nameEn ?? "?",
+            qty: l.qty,
+            sen: 0,
+          };
+        }),
+      };
+      setPlaced(appendPlaced(path.qrToken, summary));
+      clearCart(path.qrToken);
+      setCart({ lines: [], pendingUlid: null });
+      setView("placed");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      if (message === "option_required" || message === "too_many_options") {
+        setError("error_option_required");
+      } else if (message === "unavailable") {
+        setError("error_unavailable");
+        // The menu moved under us — refresh so the 86'd item disappears.
+        fetchTablePage(path.outletId, path.qrToken).then(setPage, () => {});
+      } else {
+        setError("error_generic");
+      }
+    } finally {
+      setSending(false);
+    }
+  }, [path, page, cart, sending, lang, updateCart]);
+
+  if (notFound) {
+    return (
+      <div className="app">
+        <div className="notfound">
+          <h1>{t("not_found_title")}</h1>
+          <p>{t("not_found_body")}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!page) {
+    return (
+      <div className="app">
+        {offline && <div className="offline-note">{t("offline_note")}</div>}
+      </div>
+    );
+  }
+
+  const totalSen = cartTotalSen(cart.lines, page.menu.items);
+  const count = cart.lines.reduce((n, l) => n + l.qty, 0);
+
+  return (
+    <div className="app">
+      <header className="top">
+        <div className="top-row">
+          <div>
+            <div className="shop">{page.outlet.name}</div>
+            <div className="table-tag">
+              <span className="num">{page.table.label}</span>
+            </div>
+          </div>
+          <div className="lang-swap" role="group" aria-label="Language">
+            <button aria-pressed={lang === "ms"} onClick={() => switchLang("ms")}>
+              BM
+            </button>
+            <button aria-pressed={lang === "en"} onClick={() => switchLang("en")}>
+              EN
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Two different situations, two different sentences. "offline" means
+          this phone lost signal; "local" means the shop's line is down and
+          the tablet on the counter is serving this page. Merging them would
+          tell half the customers something untrue. */}
+      {page.local === true && (
+        <div className="offline-note">{t("local_banner")}</div>
+      )}
+      {offline && !page.local && (
+        <div className="offline-note">{t("offline_note")}</div>
+      )}
+      {error && <div className="error-note" role="alert">{t(error)}</div>}
+
+      {view === "menu" && (
+        <MenuScreen
+          page={page}
+          lang={lang}
+          t={t}
+          placed={placed}
+          stage={stage}
+          billRequested={billRequested}
+          waiterCalled={waiterCalled}
+          onBill={doBill}
+          onWaiter={doWaiter}
+          onPick={setActiveItem}
+        />
+      )}
+      {view === "cart" && (
+        <CartScreen
+          page={page}
+          lang={lang}
+          t={t}
+          cart={cart}
+          sending={sending}
+          onRemove={dropLine}
+          onQty={setLineQty}
+          onBack={() => setView("menu")}
+          onSubmit={submit}
+        />
+      )}
+      {settled && (
+        <div className="paid-note" role="status" data-testid="paid">
+          <strong>{t("paid_title")}</strong>
+          <span>
+            {t("paid_body")} {formatMYR(settled.paidSen)}
+            {settled.receiptNo !== null &&
+              ` · ${t("receipt_no")} ${String(settled.receiptNo).padStart(6, "0")}`}
+          </span>
+        </div>
+      )}
+
+      {view === "placed" && (
+        <PlacedScreen
+          t={t}
+          lang={lang}
+          placed={placed}
+          stage={stage}
+          billRequested={billRequested}
+          waiterCalled={waiterCalled}
+          local={page.local === true}
+          onBill={doBill}
+          onWaiter={doWaiter}
+          onMore={() => setView("menu")}
+        />
+      )}
+
+      {view === "menu" && (
+        <div className={`cart-bar ${count > 0 ? "is-up" : ""}`}>
+          <div className="cart-count num">{count}</div>
+          <div className="cart-total">
+            <small>{t("cart_label")}</small>
+            <strong className="num">{formatMYR(totalSen)}</strong>
+          </div>
+          <button className="btn btn-accent" onClick={() => setView("cart")}>
+            {t("view_cart")}
+          </button>
+        </div>
+      )}
+
+      {activeItem && (
+        <ItemSheet
+          item={activeItem}
+          lang={lang}
+          t={t}
+          onClose={() => setActiveItem(null)}
+          onAdd={addLine}
+        />
+      )}
+
+      {undo && (
+        <UndoBar
+          label={`${t("added")}: ${undo.name}`}
+          action={t("undo")}
+          onAction={() => {
+            dropLine(undo.lineId);
+            setUndo(null);
+          }}
+          onDone={() => setUndo(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * "That's not what I wanted" — one tap, where it happened.
+ *
+ * Shown above the cart bar rather than over it, so undoing and going to the
+ * cart are never the same tap in the same place. It clears itself after a few
+ * seconds: a customer who has moved on should not be looking at a stale offer
+ * to undo something they meant.
+ */
+function UndoBar({
+  label,
+  action,
+  onAction,
+  onDone,
+}: {
+  label: string;
+  action: string;
+  onAction: () => void;
+  onDone: () => void;
+}) {
+  useEffect(() => {
+    const timer = window.setTimeout(onDone, 6000);
+    return () => window.clearTimeout(timer);
+  }, [label, onDone]);
+
+  return (
+    <div className="undo-bar" role="status">
+      <span className="undo-label">{label}</span>
+      <button className="undo-action" onClick={onAction}>
+        {action}
+      </button>
+    </div>
+  );
+}

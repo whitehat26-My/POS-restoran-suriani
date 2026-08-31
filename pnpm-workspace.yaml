@@ -1,0 +1,11 @@
+packages:
+  - apps/*
+  - packages/*
+  - tools/local-server-harness
+
+# pnpm 10 blocks postinstall scripts by default. workerd (the real Workers
+# runtime, used by both wrangler and the test pool) and esbuild both need
+# theirs, and the failure is silent — allow them explicitly.
+onlyBuiltDependencies:
+  - workerd
+  - esbuild

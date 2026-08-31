@@ -1,0 +1,387 @@
+/**
+ * Staff client. Auth rides the HttpOnly session cookie set by login — the
+ * till never stores a token anywhere scripts can read.
+ */
+import type { Sen } from "@suriani/core/money";
+
+import { authedFetch, setAuthToken } from "./base";
+
+export interface Outlet {
+  id: string;
+  name: string;
+}
+
+export type Role = "owner" | "manager" | "cashier";
+
+export interface DayRow {
+  date: string;
+  salesSen: Sen;
+  orderCount: number;
+  billCount: number;
+  itemCount: number;
+}
+
+export interface DaySummary extends DayRow {
+  /** What reached the drawer, which is not what left the kitchen. */
+  collectedSen: Sen;
+  byMethod: { method: string; totalSen: Sen; count: number }[];
+  discountSen: Sen;
+  closing: {
+    openingFloatSen: Sen;
+    expectedCashSen: Sen;
+    countedCashSen: Sen | null;
+    varianceSen: Sen | null;
+    closedAt: number | null;
+  } | null;
+  byHour: { hour: number; salesSen: Sen; orderCount: number }[];
+  byCategory: {
+    categoryId: string;
+    nameMs: string;
+    nameEn: string;
+    salesSen: Sen;
+    qty: number;
+  }[];
+  byItem: {
+    menuItemId: string;
+    nameMs: string;
+    nameEn: string;
+    salesSen: Sen;
+    qty: number;
+  }[];
+}
+
+export interface Station {
+  id: string;
+  name: string;
+  /** "kitchen" | "drinks" | "counter" — what kind of paper comes out. */
+  target: string;
+  enabled: number;
+  isDefault: number;
+  sortOrder: number;
+}
+
+export interface OutletSettings {
+  wifiSsid: string | null;
+  wifiPassword: string | null;
+  /**
+   * Where the tablet listens, e.g. "http://192.168.1.50:8080".
+   *
+   * Until this is set the printed table cards leave the "Tiada internet?"
+   * panel off entirely — a QR pointing nowhere is worse than no QR.
+   */
+  localOrderUrl: string | null;
+}
+
+export interface StationRoute {
+  stationId: string;
+  categoryId: string;
+}
+
+export interface Zone {
+  id: string;
+  nameMs: string;
+  nameEn: string;
+  sortOrder: number;
+}
+
+export interface FloorTable {
+  id: string;
+  label: string;
+  zoneId: string | null;
+  capacity: number | null;
+  sortOrder: number;
+  status: string;
+  /** dining | takeaway. The takeaway row is a destination, not a table. */
+  kind?: string;
+  session: {
+    id: string;
+    openedAt: number;
+    status: string;
+    totalSen: Sen;
+    orderCount: number;
+  } | null;
+}
+
+export interface TicketLine {
+  qty: number;
+  nameMs: string;
+  nameEn: string;
+  modifiers: { label: string; priceDeltaSen: Sen }[];
+  notes: string | null;
+}
+
+export interface Ticket {
+  id: string;
+  sessionId: string;
+  tableId: string;
+  tableLabel: string;
+  placedAt: number;
+  status: string;
+  source: string;
+  totalSen: Sen;
+  lines: TicketLine[];
+}
+
+export interface MenuOption {
+  id: string;
+  labelMs: string;
+  labelEn: string;
+  priceDeltaSen: Sen;
+}
+
+export interface MenuGroup {
+  id: string;
+  nameMs: string;
+  nameEn: string;
+  minSelect: number;
+  maxSelect: number;
+  options: MenuOption[];
+}
+
+export interface MenuItem {
+  id: string;
+  categoryId: string;
+  nameMs: string;
+  nameEn: string;
+  priceSen: Sen;
+  isAvailable: number;
+  modifierGroups: MenuGroup[];
+}
+
+export interface MenuCategory {
+  id: string;
+  nameMs: string;
+  nameEn: string;
+  sortOrder: number;
+}
+
+export interface BillSheet {
+  table: { id: string; label: string };
+  session: {
+    id: string;
+    openedAt: number;
+    status: string;
+    totalSen: Sen;
+    /** Plates on the table: what the counter wants to know first. */
+    itemCount: number;
+    orders: {
+      id: string;
+      placedAt: number;
+      status: string;
+      source: string;
+      lines: {
+        nameMs: string;
+        nameEn: string;
+        qty: number;
+        lineSen: Sen;
+        modifiers: { label: string; priceDeltaSen: Sen }[];
+        notes: string | null;
+      }[];
+    }[];
+    /** Taken off the bill without anybody paying it. */
+    discountSen: Sen;
+    /** Already settled, across however many payments. */
+    paidSen: Sen;
+    /** What is still owed. Zero would have closed the bill. */
+    outstandingSen: Sen;
+    payments: {
+      id: string;
+      method: string;
+      amountSen: Sen;
+      tenderedSen: Sen | null;
+      changeSen: Sen | null;
+      roundingSen: Sen;
+      receiptNo: number | null;
+      reference: string | null;
+      paidAt: number;
+    }[];
+    discounts: { id: string; amountSen: Sen; reason: string; at: number }[];
+  } | null;
+}
+
+export interface DayMoney {
+  date: string;
+  collectedSen: Sen;
+  byMethod: { method: string; totalSen: Sen; count: number }[];
+  discountSen: Sen;
+  cashSen: Sen;
+  closing: {
+    openingFloatSen: Sen;
+    expectedCashSen: Sen;
+    countedCashSen: Sen | null;
+    varianceSen: Sen | null;
+    closedAt: number | null;
+  } | null;
+}
+
+async function json<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `request failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export const api = {
+  login: async (phone: string, pin: string) => {
+    const result = await authedFetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, pin }),
+    }).then(
+      json<{ token: string; user: { id: string; name: string; role: string } }>,
+    );
+    // The browser also gets an HttpOnly cookie and would work without this.
+    // The tablet is cross-origin, so the token is the only thing it has.
+    setAuthToken(result.token);
+    return result;
+  },
+
+  outlets: () =>
+    authedFetch("/api/outlets").then(json<{ role: Role; outlets: Outlet[] }>),
+
+  floor: (outletId: string) =>
+    authedFetch(`/api/outlets/${outletId}/floor`).then(
+      json<{ zones: Zone[]; tables: FloorTable[] }>,
+    ),
+
+  orders: (outletId: string) =>
+    authedFetch(`/api/outlets/${outletId}/orders`).then(json<{ orders: Ticket[] }>),
+
+  menu: (outletId: string) =>
+    authedFetch(`/api/outlets/${outletId}/menu`).then(
+      json<{ categories: MenuCategory[]; items: MenuItem[] }>,
+    ),
+
+  bill: (outletId: string, tableId: string) =>
+    authedFetch(`/api/outlets/${outletId}/tables/${tableId}/bill`).then(
+      json<BillSheet>,
+    ),
+
+  dailySales: (outletId: string, days = 30) =>
+    authedFetch(`/api/outlets/${outletId}/reports/daily?days=${days}`).then(
+      json<{ days: DayRow[] }>,
+    ),
+
+  daySummary: (outletId: string, date: string) =>
+    authedFetch(`/api/outlets/${outletId}/reports/daily/${date}`).then(
+      json<DaySummary>,
+    ),
+
+  printReceipt: (outletId: string, sessionId: string) =>
+    authedFetch(`/api/outlets/${outletId}/sessions/${sessionId}/receipt`, {
+      method: "POST",
+    }).then(json<{ ok: boolean; jobId: string; totalSen: Sen; itemCount: number }>),
+
+  closeSession: (outletId: string, sessionId: string) =>
+    authedFetch(`/api/outlets/${outletId}/sessions/${sessionId}/close`, {
+      method: "POST",
+    }).then(json<{ ok: boolean }>),
+
+  /**
+   * The row a bungkus order hangs off.
+   *
+   * Not a table anybody sits at — it exists so a takeaway order can reuse the
+   * bill, docket, receipt and payment machinery unchanged instead of needing
+   * a second way to sell food.
+   */
+  takeaway: (outletId: string) =>
+    authedFetch(`/api/outlets/${outletId}/takeaway`, { method: "POST" }).then(
+      json<{ id: string; label: string }>,
+    ),
+
+  /** The day's takings and how the drawer stands. */
+  day: (outletId: string) =>
+    authedFetch(`/api/outlets/${outletId}/day`).then(json<DayMoney>),
+
+  openDay: (outletId: string, openingFloatSen: Sen) =>
+    authedFetch(`/api/outlets/${outletId}/day/open`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ openingFloatSen }),
+    }).then(json<{ ok: boolean }>),
+
+  closeDay: (outletId: string, cashCountedSen: Sen) =>
+    authedFetch(`/api/outlets/${outletId}/day/close`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cashCountedSen }),
+    }).then(
+      json<{ expectedCashSen: Sen; countedCashSen: Sen; varianceSen: Sen }>,
+    ),
+
+  settings: (outletId: string) =>
+    authedFetch(`/api/outlets/${outletId}/settings`).then(json<OutletSettings>),
+
+  saveSettings: (outletId: string, patch: Partial<OutletSettings>) =>
+    authedFetch(`/api/outlets/${outletId}/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then(json<OutletSettings>),
+
+  stations: (outletId: string) =>
+    authedFetch(`/api/outlets/${outletId}/print/stations`).then(
+      json<{ stations: Station[]; routes: StationRoute[] }>,
+    ),
+
+  /**
+   * Every table with its QR token.
+   *
+   * The tablet caches these so its own web server can resolve the token in a
+   * customer's URL with the line down. Readable by any staff session, which
+   * is right: a cashier can already place an order against any table.
+   */
+  tables: (outletId: string) =>
+    authedFetch(`/api/outlets/${outletId}/tables`).then(
+      json<{ tables: { id: string; label: string; qrToken: string }[] }>,
+    ),
+
+  /**
+   * Mint an agent credential for this tablet.
+   *
+   * The token comes back once and is never readable again — only its hash is
+   * stored — so the caller has to keep it or register another.
+   */
+  registerAgent: (outletId: string, name: string) =>
+    authedFetch(`/api/outlets/${outletId}/agents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }).then(json<{ deviceId: string; token: string }>),
+
+};
+
+/*
+ * Counter orders, serve, 86, payments, discounts and closing a bill are
+ * deliberately absent here.
+ *
+ * They go through the outbox in offline.ts instead — one path whether the
+ * line is up or down, so the offline case is the case that runs every day
+ * rather than a rarely-exercised branch that only matters during an outage.
+ */
+
+export interface PrintHealth {
+  queued: number;
+  failed: number;
+  stalled: boolean;
+  oldestQueuedMs: number | null;
+  recent: {
+    id: string;
+    status: string;
+    target: string;
+    tableLabel: string;
+    attempts: number;
+    lastError: string | null;
+  }[];
+}
+
+export const printApi = {
+  health: (outletId: string) =>
+    authedFetch(`/api/outlets/${outletId}/print/health`).then(json<PrintHealth>),
+
+  reprint: (outletId: string, jobId: string) =>
+    authedFetch(`/api/outlets/${outletId}/print/jobs/${jobId}/reprint`, {
+      method: "POST",
+    }).then(json<{ ok: boolean }>),
+};

@@ -1,0 +1,386 @@
+/* The till. One committed dark look — less glare over a ten-hour shift.
+   Every value comes from design/tokens.css (--pos-*). */
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--pos-bg);
+  color: var(--pos-text);
+  font-family: var(--sans);
+  font-size: var(--t-base);
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+:focus-visible { outline: 2px solid var(--sambal); outline-offset: 2px; border-radius: var(--r-sm); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* ---- login ---- */
+.login { height: 100%; display: grid; place-items: center; }
+.login-card {
+  width: 340px; padding: var(--s6); border-radius: var(--r-lg);
+  background: var(--pos-panel); border: 1px solid var(--pos-edge);
+  display: flex; flex-direction: column; gap: var(--s3);
+}
+.login-brand { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s2); }
+.login-mark {
+  width: 40px; height: 40px; border-radius: 10px; background: var(--enamel);
+  color: #fff; display: grid; place-items: center; font-family: var(--mono); font-weight: 700;
+}
+.login-title { font-weight: 800; letter-spacing: -.02em; }
+.login-sub { font-size: var(--t-xs); color: var(--pos-muted); }
+.field {
+  padding: 12px var(--s3); border-radius: var(--r-md); font: inherit;
+  background: var(--pos-raised); border: 1.5px solid var(--pos-edge); color: var(--pos-text);
+}
+.field::placeholder { color: var(--pos-muted); }
+.login-err { color: var(--sambal); font-size: var(--t-sm); font-weight: 600; }
+
+.btn {
+  padding: 12px 18px; border-radius: var(--r-md); font-weight: 700; font-size: var(--t-sm);
+  background: var(--enamel); color: #fff;
+}
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-accent { background: var(--sambal); }
+.btn-quiet { background: var(--pos-raised); border: 1px solid var(--pos-edge); color: var(--pos-text); }
+
+/* ---- shell ---- */
+.till { height: 100%; display: flex; flex-direction: column; }
+.bar {
+  flex: none; display: flex; align-items: center; gap: var(--s4);
+  padding: var(--s3) var(--s4); background: var(--pos-panel);
+  border-bottom: 1px solid var(--pos-edge);
+}
+.bar-title { font-weight: 800; letter-spacing: -.02em; }
+.bar-title small { display: block; font-weight: 500; font-size: var(--t-xs); color: var(--pos-muted); }
+.bar-right { margin-left: auto; display: flex; gap: var(--s2); align-items: center; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border-radius: var(--r-full);
+  font-size: var(--t-xs); font-weight: 700;
+  background: var(--pos-raised); border: 1px solid var(--pos-edge);
+}
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+/* The outbox pill. Only visible when something is waiting, because a count of
+   zero is noise — but when it is visible it has to be, since it means the
+   restaurant is trading ahead of the server. */
+button.pill { cursor: pointer; }
+.dot-ok { background: var(--pandan); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pandan) 25%, transparent); }
+.dot-warn { background: var(--tarik); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tarik) 25%, transparent); animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: .4; } }
+
+/* The order pad is the widest column, not the narrowest: taking an order is
+   now the counter's main job, and 147 dishes need somewhere to be read. */
+.body { flex: 1; display: grid; grid-template-columns: 1fr .9fr 1.3fr; min-height: 0; }
+.col { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--pos-edge); }
+.col:last-child { border-right: 0; }
+.col-head {
+  flex: none; padding: var(--s3) var(--s4) var(--s2);
+  font-size: var(--t-xs); font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--pos-muted);
+}
+.col-scroll { flex: 1; overflow-y: auto; padding: 0 var(--s4) var(--s4); }
+
+/* The counter's way through 147 dishes. */
+.menu-search {
+  flex: none; margin: 0 var(--s4) var(--s2);
+  padding: 8px var(--s3); border-radius: var(--r-md);
+  border: 1px solid var(--pos-edge); background: var(--pos-raised);
+  font: inherit; font-size: var(--t-sm); color: var(--pos-text);
+}
+.menu-search::placeholder { color: var(--pos-muted); }
+
+/* ---- floor ---- */
+.zone-name { font-size: var(--t-xs); font-weight: 700; color: var(--pos-muted); margin: var(--s3) 0 var(--s2); }
+.floor { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s2); }
+.tbl {
+  aspect-ratio: 1; border-radius: var(--r-md); border: 1.5px solid var(--pos-edge);
+  background: var(--pos-panel); color: var(--pos-muted);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  transition: transform var(--fast) var(--ease); position: relative;
+}
+.tbl:hover { transform: translateY(-2px); }
+.tbl-code { font-family: var(--mono); font-weight: 700; font-size: var(--t-md); }
+.tbl-meta { font-size: var(--t-xs); font-family: var(--mono); }
+.tbl[data-state="ordering"] { border-color: var(--tbl-ordering); background: color-mix(in srgb, var(--tbl-ordering) 20%, var(--pos-panel)); color: #CFE0F8; }
+.tbl[data-state="eating"]   { border-color: var(--pandan); background: color-mix(in srgb, var(--pandan) 18%, var(--pos-panel)); color: #CDEBD8; }
+.tbl[data-state="bill_requested"] { border-color: var(--tarik); background: color-mix(in srgb, var(--tarik) 22%, var(--pos-panel)); color: #F6E2C0; }
+.tbl[data-state="bill_requested"]::after {
+  content: ""; position: absolute; inset: -3px; border-radius: var(--r-md);
+  border: 2px solid var(--tarik); animation: ring 1.6s var(--ease) infinite;
+}
+@keyframes ring { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.07); } }
+.tbl.is-waiter::before {
+  content: "🔔"; position: absolute; top: -6px; right: -6px; font-size: 16px;
+  animation: blink 1s infinite;
+}
+
+/* ---- feed ---- */
+.ticket {
+  background: var(--pos-panel); border: 1px solid var(--pos-edge);
+  border-radius: var(--r-md); padding: var(--s3); margin-bottom: var(--s2);
+  border-left: 3px solid var(--tbl-ordering);
+  animation: slide-in 320ms var(--spring);
+}
+.ticket[data-status="served"] { border-left-color: var(--pandan); opacity: .55; }
+@keyframes slide-in { from { opacity: 0; transform: translateX(14px); } }
+.ticket-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s2); }
+.ticket-tbl { font-family: var(--mono); font-weight: 700; }
+.ticket-time { font-family: var(--mono); font-size: var(--t-xs); color: var(--pos-muted); }
+.ticket-lines { margin-top: var(--s2); display: flex; flex-direction: column; gap: 3px; font-size: var(--t-sm); }
+.ticket-line { display: flex; gap: var(--s2); }
+.ticket-qty { font-family: var(--mono); color: var(--tarik); font-weight: 700; min-width: 24px; }
+.ticket-note { color: var(--pos-muted); font-size: var(--t-xs); font-style: italic; }
+.ticket-acts { display: flex; gap: var(--s2); margin-top: var(--s3); }
+.mini {
+  flex: 1; padding: 8px; border-radius: var(--r-sm); font-size: var(--t-xs); font-weight: 700;
+  background: var(--pos-raised); border: 1px solid var(--pos-edge);
+}
+.mini-go { background: var(--enamel); border-color: var(--enamel); color: #fff; }
+.empty { color: var(--pos-muted); font-size: var(--t-sm); padding: var(--s5) 0; text-align: center; }
+
+/* ---- menu / manual entry ---- */
+.mi {
+  display: flex; align-items: center; gap: var(--s2); width: 100%;
+  padding: 10px var(--s3); border-radius: var(--r-md); margin-bottom: var(--s2);
+  background: var(--pos-panel); border: 1px solid var(--pos-edge); text-align: left;
+}
+.mi.is-86 { opacity: .45; }
+.mi-name { flex: 1; font-size: var(--t-sm); font-weight: 600; }
+.mi-price { font-family: var(--mono); font-size: var(--t-sm); }
+.mi-86 {
+  font-size: var(--t-xs); font-weight: 700; padding: 4px 8px; border-radius: var(--r-sm);
+  background: var(--pos-raised); border: 1px solid var(--pos-edge); color: var(--pos-muted);
+}
+.mi-86.is-on { background: color-mix(in srgb, var(--sambal) 22%, var(--pos-panel)); color: var(--sambal); border-color: var(--sambal); }
+
+/* ---- overlay sheets (bill / new order) ---- */
+.veil {
+  position: fixed; inset: 0; z-index: 40; background: rgba(4,10,8,.62);
+  display: flex; align-items: center; justify-content: center; padding: var(--s5);
+}
+.sheet {
+  width: 100%; max-width: 520px; max-height: 88%;
+  display: flex; flex-direction: column;
+  background: var(--pos-panel); border: 1px solid var(--pos-edge);
+  border-radius: var(--r-lg); padding: var(--s4);
+  animation: pop var(--mid) var(--spring);
+}
+@keyframes pop { from { transform: scale(.96); opacity: 0; } }
+.sheet-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3); }
+.sheet-title { font-weight: 800; font-size: var(--t-md); letter-spacing: -.02em; }
+.sheet-x { color: var(--pos-muted); font-size: var(--t-lg); line-height: 1; padding: 2px 8px; }
+.sheet-scroll { flex: 1; overflow-y: auto; min-height: 0; }
+.bill-order { border-top: 1px dashed var(--pos-edge); padding: var(--s3) 0; }
+.bill-order-head { display: flex; justify-content: space-between; font-size: var(--t-xs); color: var(--pos-muted); font-family: var(--mono); }
+.bill-line { display: flex; gap: var(--s2); font-size: var(--t-sm); padding: 3px 0; }
+.bill-line .grow { flex: 1; }
+.bill-total { display: flex; justify-content: space-between; font-weight: 800; font-size: var(--t-md); padding-top: var(--s3); border-top: 1px solid var(--pos-edge); margin-top: var(--s2); }
+.sheet-foot { display: flex; gap: var(--s2); margin-top: var(--s4); }
+.sheet-foot .btn { flex: 1; }
+
+/* What the counter looks at first: how much food is on that table, and what
+   it comes to. Both numbers big enough to read across a counter. */
+.bill-strip {
+  display: flex; align-items: center; gap: var(--s3);
+  padding: var(--s3); margin-bottom: var(--s2);
+  background: var(--pos-raised); border: 1px solid var(--pos-edge);
+  border-radius: var(--r-md);
+}
+.bill-strip-count { font-size: var(--t-xl); font-weight: 800; line-height: 1; letter-spacing: -.03em; }
+.bill-strip-label { flex: 1; display: flex; flex-direction: column; font-size: var(--t-sm); }
+.bill-strip-label small { color: var(--pos-muted); font-size: var(--t-xs); }
+.bill-strip-total { font-size: var(--t-lg); font-weight: 800; letter-spacing: -.02em; }
+
+.opt-row {
+  display: flex; align-items: center; gap: var(--s2); width: 100%;
+  padding: 9px var(--s3); border-radius: var(--r-sm); margin-bottom: 6px;
+  border: 1.5px solid var(--pos-edge); background: var(--pos-raised); font-size: var(--t-sm);
+  text-align: left;
+}
+.opt-row[aria-pressed="true"] { border-color: var(--enamel-lift); background: color-mix(in srgb, var(--enamel) 22%, var(--pos-raised)); }
+.opt-row .grow { flex: 1; }
+.qty-row { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s3); }
+.qty-row button {
+  width: 40px; height: 40px; border-radius: var(--r-sm); font-weight: 800; font-size: var(--t-md);
+  background: var(--pos-raised); border: 1px solid var(--pos-edge);
+}
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  background: var(--pos-raised); border: 1px solid var(--pos-edge); color: var(--pos-text);
+  padding: 10px 18px; border-radius: var(--r-full); font-size: var(--t-sm); font-weight: 600;
+  z-index: 90; animation: pop var(--mid) var(--spring);
+}
+@media (max-width: 900px) {
+  .body { grid-template-columns: 1fr; overflow-y: auto; }
+  .col { border-right: 0; border-bottom: 1px solid var(--pos-edge); }
+}
+
+/* ---- the owner's daily record ----
+   Two columns instead of the till's three, and it has to work at phone width:
+   the owner reads yesterday's takings on her phone, not at the counter. */
+.body-records { grid-template-columns: .8fr 1.2fr; }
+.pill[aria-pressed="true"] { background: var(--enamel); border-color: var(--enamel-lift); color: #fff; }
+
+.day-row {
+  display: flex; align-items: center; gap: var(--s3); width: 100%; text-align: left;
+  padding: 10px var(--s3); border-radius: var(--r-md); margin-bottom: 6px;
+  border: 1.5px solid transparent; background: var(--pos-raised);
+}
+.day-row[aria-pressed="true"] { border-color: var(--enamel-lift); }
+.day-date { flex: 1; display: flex; flex-direction: column; font-size: var(--t-sm); font-weight: 600; }
+.day-date small { color: var(--pos-muted); font-size: var(--t-xs); font-weight: 500; }
+.day-sales { font-weight: 800; font-size: var(--t-sm); }
+.day-total {
+  display: flex; justify-content: space-between; font-weight: 800;
+  padding-top: var(--s3); margin-top: var(--s2); border-top: 1px solid var(--pos-edge);
+}
+
+.stat-row { display: flex; gap: var(--s2); margin: var(--s3) 0 var(--s2); }
+.stat {
+  flex: 1; display: flex; flex-direction: column; gap: 2px;
+  padding: var(--s3); border-radius: var(--r-md);
+  background: var(--pos-raised); border: 1px solid var(--pos-edge);
+}
+.stat-label { font-size: var(--t-xs); color: var(--pos-muted); font-weight: 600; }
+.stat-value { font-size: var(--t-lg); font-weight: 800; letter-spacing: -.02em; }
+.stat-note { font-size: var(--t-xs); color: var(--pos-muted); margin-bottom: var(--s2); }
+
+.hour-row { display: flex; align-items: center; gap: var(--s2); padding: 3px 0; font-size: var(--t-xs); }
+.hour-label { color: var(--pos-muted); width: 44px; flex: none; }
+.hour-bar { flex: 1; height: 10px; border-radius: var(--r-full); background: var(--pos-raised); overflow: hidden; }
+.hour-fill { display: block; height: 100%; border-radius: var(--r-full); background: var(--enamel-lift); }
+.hour-sales { width: 68px; text-align: right; flex: none; }
+
+@media (max-width: 900px) {
+  .body-records { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* ---- printer alarm ----
+   A failed kitchen docket is a table that never gets its food, so this is
+   deliberately the loudest thing on the screen. */
+.dot-bad { background: var(--sambal); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sambal) 28%, transparent); animation: blink 1s infinite; }
+.print-alarm {
+  flex: none; padding: var(--s3) var(--s4);
+  background: color-mix(in srgb, var(--sambal) 24%, var(--pos-panel));
+  border-bottom: 2px solid var(--sambal);
+}
+.print-alarm-head { font-weight: 800; font-size: var(--t-sm); margin-bottom: var(--s2); }
+.print-alarm-row {
+  display: flex; align-items: center; gap: var(--s3);
+  font-size: var(--t-sm); padding: 4px 0;
+}
+.print-alarm-row .grow { flex: 1; }
+
+/* ---- setup: server, agent, printers ----
+   Read on install day, standing at a counter with a screwdriver, so it is one
+   column at a comfortable reading width rather than the three-column till. */
+.setup-help { font-size: var(--t-sm); color: var(--pos-muted); margin: 0 0 var(--s3); line-height: 1.5; }
+.setup {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: var(--s4); display: flex; flex-direction: column; gap: var(--s4);
+  max-width: 720px; width: 100%; margin: 0 auto;
+}
+.setup-card {
+  background: var(--pos-panel); border: 1px solid var(--pos-edge);
+  border-radius: var(--r-lg); padding: var(--s4);
+}
+.setup-card h2 { font-size: var(--t-md); margin: 0 0 var(--s2); }
+.setup-row { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s2); flex-wrap: wrap; }
+.setup-row .grow { flex: 1; }
+.setup-mono {
+  font-family: var(--mono); font-size: var(--t-xs); color: var(--pos-text);
+  background: var(--pos-raised); border: 1px solid var(--pos-edge);
+  border-radius: var(--r-sm); padding: 6px 10px;
+  /* A server URL and a device token are both long and neither may be
+     truncated: half an address is a support call. */
+  word-break: break-all; flex: 1;
+}
+.setup-token { display: block; margin-top: var(--s2); }
+.setup-warn {
+  font-size: var(--t-sm); color: var(--tarik); margin: var(--s2) 0 0; line-height: 1.5;
+}
+.setup-station {
+  border-top: 1px solid var(--pos-edge); padding-top: var(--s3); margin-top: var(--s3);
+}
+.setup-station-head { font-weight: 700; font-size: var(--t-sm); }
+.setup-station-head small { color: var(--pos-muted); font-weight: 500; margin-left: var(--s2); }
+.setup-field { display: block; margin-top: var(--s2); }
+.setup-field span { display: block; font-size: var(--t-xs); color: var(--pos-muted); margin-bottom: 4px; }
+.setup-result { font-size: var(--t-sm); word-break: break-word; }
+
+/* A ticket the tablet took itself and the cloud has not confirmed. Marked
+   because during an outage it is the only record, and because a slip that
+   failed to print must be impossible to mistake for one that did. */
+.ticket.is-local { border-style: dashed; border-color: var(--tarik); }
+.ticket.is-local .ticket-tbl { color: var(--tarik); }
+
+/* ---- taking money ----
+   Built for one hand on a counter with a queue behind it: a keypad rather
+   than a keyboard, and the change in the largest type on the screen, because
+   that is the number the cashier reads out loud while counting it back. */
+.pay-due, .pay-tendered, .pay-change {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--s3); padding: var(--s3) 0;
+}
+.pay-due span, .pay-tendered span, .pay-change span { color: var(--pos-muted); font-size: var(--t-sm); }
+.pay-due strong { font-size: var(--t-xl); font-weight: 800; letter-spacing: -.02em; }
+.pay-tendered strong { font-size: var(--t-lg); font-weight: 700; }
+.pay-change {
+  border-top: 1px solid var(--pos-edge); margin-top: var(--s2);
+  background: color-mix(in srgb, var(--pandan) 12%, transparent);
+  border-radius: var(--r-md); padding: var(--s3);
+}
+.pay-change strong { font-size: var(--t-xl); font-weight: 800; color: var(--pandan); }
+/* Short, not "negative change": the cashier needs to ask for more money, and
+   a minus sign in front of a number does not say that. */
+.pay-change.is-short { background: color-mix(in srgb, var(--sambal) 16%, transparent); }
+.pay-change.is-short strong { color: var(--sambal); }
+.pay-note { font-size: var(--t-sm); color: var(--pos-muted); line-height: 1.5; margin: var(--s2) 0; }
+
+.opt-row-group { display: flex; gap: var(--s2); margin: var(--s3) 0; }
+.opt-row-group .opt { flex: 1; justify-content: center; }
+
+.quick-row { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s2) 0; }
+.quick-row .mini { flex: 1 1 auto; min-width: 68px; }
+
+/* Four columns of 56px targets: thumb-sized, and the same grid the floor map
+   uses, so the two screens feel like one machine. */
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); margin: var(--s3) 0; }
+.keypad button {
+  height: 56px; border-radius: var(--r-md);
+  border: 1px solid var(--pos-edge); background: var(--pos-raised);
+  color: var(--pos-text); font: inherit; font-size: var(--t-lg); font-weight: 800;
+  font-family: var(--mono);
+}
+.keypad button:active { background: var(--pos-panel); }
+
+/* A drawer that does not balance should not look like one that does. */
+.bill-total.is-variance { color: var(--tarik); }
+
+/* ---- the order pad ----
+   Customers order to a person here and the cashier keys it in, so this column
+   is the till's main job rather than a side panel. Aimed first, filled
+   second — the order a cashier hears it in. */
+.pad-target { display: flex; gap: var(--s2); padding: 0 var(--s4) var(--s2); }
+.pad-aim {
+  flex: 1; padding: 10px 12px; border-radius: var(--r-md);
+  border: 1.5px dashed var(--pos-edge); background: transparent;
+  color: var(--pos-muted); font: inherit; font-weight: 700; font-size: var(--t-sm);
+}
+/* Solid once aimed: an unaimed pad is a half-written order, and it should not
+   look like a finished one. */
+.pad-aim[aria-pressed="true"] {
+  border-style: solid; border-color: var(--enamel-lift);
+  background: var(--enamel); color: #fff;
+}
+.pad-cart {
+  flex: none; max-height: 44%; overflow-y: auto;
+  padding: var(--s3) var(--s4); border-top: 1px solid var(--pos-edge);
+  background: var(--pos-panel);
+}
+.pad-cart .bill-line .mini { flex: none; padding: 2px 8px; line-height: 1.2; }
