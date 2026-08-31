@@ -110,6 +110,7 @@ export function ItemConfig({
         <div className="sheet-foot">
           <button
             className="btn"
+            data-testid="pad-add"
             disabled={!satisfied}
             onClick={() =>
               onAdd({

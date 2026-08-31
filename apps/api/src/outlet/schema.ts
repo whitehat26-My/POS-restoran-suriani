@@ -112,7 +112,16 @@ export const tables = sqliteTable(
      * last month's reports. Archived rows stay readable for history and vanish
      * only from active listings.
      */
-    archivedAt: integer("archived_at"),
+    /**
+   * dining | takeaway
+   *
+   * A takeaway row is not a table anybody sits at — it is somewhere to hang a
+   * bungkus order so that bills, dockets, receipts and payments all work
+   * unchanged. It is kept off the floor plan's printed QR cards for the
+   * obvious reason.
+   */
+  kind: text("kind").notNull().default("dining"),
+  archivedAt: integer("archived_at"),
     /** When the QR secret was last rotated, invalidating printed cards. */
     tokenRotatedAt: integer("token_rotated_at"),
   },

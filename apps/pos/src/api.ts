@@ -91,6 +91,8 @@ export interface FloorTable {
   capacity: number | null;
   sortOrder: number;
   status: string;
+  /** dining | takeaway. The takeaway row is a destination, not a table. */
+  kind?: string;
   session: {
     id: string;
     openedAt: number;
@@ -275,6 +277,18 @@ export const api = {
     authedFetch(`/api/outlets/${outletId}/sessions/${sessionId}/close`, {
       method: "POST",
     }).then(json<{ ok: boolean }>),
+
+  /**
+   * The row a bungkus order hangs off.
+   *
+   * Not a table anybody sits at — it exists so a takeaway order can reuse the
+   * bill, docket, receipt and payment machinery unchanged instead of needing
+   * a second way to sell food.
+   */
+  takeaway: (outletId: string) =>
+    authedFetch(`/api/outlets/${outletId}/takeaway`, { method: "POST" }).then(
+      json<{ id: string; label: string }>,
+    ),
 
   /** The day's takings and how the drawer stands. */
   day: (outletId: string) =>

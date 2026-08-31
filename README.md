@@ -10,6 +10,10 @@ Two branches of Restoran Suriani are customer zero.
 
 ## Status
 
+**The counter is the primary way an order is taken**, with the QR as an option
+rather than the only path — customers order to a person and the cashier records
+it. See [Taking the order](#taking-the-order).
+
 **Phase 6 (payments) complete.** A bill settles and closes: cash or DuitNow QR, the change worked
 out before the drawer opens, a real receipt with a receipt number, and the drawer pulse on the wire.
 At closing time the counted cash is checked against what the till says should be there, and a short
@@ -284,6 +288,42 @@ off since Tuesday.
 router, power — need real printers and are the gate before any branch goes live. Until then the till
 also runs in a browser, where it already trades offline; a browser cannot open a socket to a printer
 or listen on one, and the Peranti screen says so rather than offering buttons that fail silently.
+
+## Taking the order
+
+**Customers here order to a person.** That is how Restoran Suriani runs and it
+is not a limitation to design around — a waiter takes the order and the cashier
+records it on the till, which is where the day's numbers come from. The QR on
+the table is still there and still works; it is an option rather than the only
+path, which is what the plan always said it should be.
+
+So the order pad is the **widest column on the till**, not a side panel:
+
+- **Aimed first, filled second.** Tap a table, then add dishes. That is the
+  order a cashier hears it in — *"Meja 5, dua nasi lemak, satu teh ais"* — and
+  being asked which table only after building a cart puts the question in the
+  wrong place. Tapping a table's bill has a **Tambah pesanan** button that aims
+  the pad at it, because adding to an occupied table is the commonest thing a
+  counter does.
+- **The pad reads the order back** — dish, choices, note and price on every
+  line, with a × to drop one. A cashier keying in something they were told
+  needs to see the words, not a count on a button: mishearing *kurang pedas* is
+  how the wrong plate leaves the pass.
+- **An unaimed pad cannot be sent.** The button says *Pilih meja dahulu* rather
+  than sending food somewhere nobody chose.
+- **Bungkus** is a destination beside the tables. A takeaway customer has no
+  table, so an outlet gets one row that is not a table anybody sits at — that
+  way the whole bill, docket, receipt and payment machinery is reused unchanged
+  rather than needing a second way to sell food. It is kept off the floor plan
+  and off the printed QR cards, for the obvious reasons.
+- **Bungkus is paid before it is cooked.** Sending one opens its bill with the
+  amount on the button, so the cashier sees what they are about to charge for
+  before they charge for it. This is the one place the till waits for the
+  server — the bill hangs off a session the server mints — and with the line
+  down it says so rather than leaving an empty sheet.
+
+The counter order lands in the **same op log** as a phone order and prints the
+same docket. There is one way to sell food, taken two ways.
 
 ## Taking money
 

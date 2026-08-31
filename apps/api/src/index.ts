@@ -679,10 +679,14 @@ app.get("/api/outlets/:outletId/tables/cards", manages, async (c) => {
   );
   if (!handle) return c.json({ error: "not found" }, 404);
 
-  const [tables, settings] = await Promise.all([
+  const [allTables, settings] = await Promise.all([
     handle.stub.listTables(),
     handle.stub.getSettings(),
   ]);
+  // Cards are for tables people sit at. A QR stand on the counter reading
+  // "Bungkus" would be nonsense, and scanning it would open somebody else's
+  // takeaway order.
+  const tables = allTables.filter((t) => t.kind !== "takeaway");
 
   const html = renderCards({
     outletName: handle.outlet.name,
@@ -1038,6 +1042,23 @@ app.post("/api/outlets/:outletId/day/close", async (c) => {
   });
   if (!result.ok) return c.json({ error: result.error }, 400);
   return c.json(result);
+});
+
+/**
+ * Somewhere to put a bungkus order.
+ *
+ * Any staff role, because taking a takeaway order is the job. Created on the
+ * first request rather than at onboarding, so outlets that were seeded before
+ * takeaway existed grow one the first time somebody sells nasi bungkus.
+ */
+app.post("/api/outlets/:outletId/takeaway", async (c) => {
+  const handle = await getOutletForSession(
+    c.env,
+    c.get("session"),
+    c.req.param("outletId"),
+  );
+  if (!handle) return c.json({ error: "not found" }, 404);
+  return c.json(await handle.stub.takeawayTable());
 });
 
 /** 86-ing. Any staff role: it is the cashier who sees the empty pot. */

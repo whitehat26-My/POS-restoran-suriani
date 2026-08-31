@@ -53,6 +53,19 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
   const [configItem, setConfigItem] = useState<MenuItem | null>(null);
   const [cart, setCart] = useState<ConfiguredLine[]>([]);
   const [pickTable, setPickTable] = useState(false);
+  /**
+   * Where the order pad is aimed.
+   *
+   * Customers order to a person here and the cashier keys it in, so the pad
+   * is aimed first and filled second — that is the order a cashier hears it
+   * in ("Meja 5, dua nasi lemak"), and being asked which table only after
+   * building a cart puts the question in the wrong place.
+   */
+  const [target, setTarget] = useState<{
+    id: string;
+    label: string;
+    kind: string;
+  } | null>(null);
   // 147 dishes in one scroll is unusable at a counter mid-service.
   const [menuQuery, setMenuQuery] = useState("");
   const [toast, setToast] = useState<string | null>(null);
@@ -394,6 +407,10 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
   const tablesByZone = useMemo(() => {
     const map = new Map<string | null, FloorTable[]>();
     for (const t of tables) {
+      // The takeaway row is a destination for the order pad, not a table on
+      // the floor. Showing it here would have somebody trying to seat people
+      // at it.
+      if (t.kind === "takeaway") continue;
       const list = map.get(t.zoneId) ?? [];
       list.push(t);
       map.set(t.zoneId, list);
@@ -412,12 +429,13 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
       )
     : items;
 
-  const submitCart = async (tableId: string) => {
+  const submitCart = async (tableId: string, tableLabel?: string) => {
     setPickTable(false);
     const till = offline.current;
     if (!till) return;
 
-    const table = tables.find((t) => t.id === tableId);
+    const table = tables.find((t) => t.id === tableId) ??
+      (tableLabel ? { label: tableLabel } : undefined);
     const snapshot = local.current?.cache();
 
     // The tablet prints its own dockets, whether or not the line is up.
@@ -464,7 +482,39 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
     setPendingOps(await till.pending());
     // The order exists on this tablet either way. It reaches the kitchen now
     // if the line is up, and the moment it returns if it is not.
-    say(printed.ok ? "Pesanan kaunter dicetak" : "Pesanan kaunter direkod");
+    say(printed.ok ? "Pesanan dicetak" : "Pesanan direkod");
+
+    // Bungkus is paid for before it is cooked, so the bill opens straight
+    // away with the amount on the button. Deliberately the bill and not the
+    // payment sheet on its own: the cashier should see what they are about to
+    // charge for before they charge for it.
+    //
+    // This is the one place the till waits for the server. The bill hangs off
+    // a session the server mints, so it cannot be opened until the op has
+    // actually landed — and with the line down it never will, which is said
+    // rather than left as a sheet that stays empty.
+    if (target?.kind === "takeaway") {
+      await till.flush();
+      const bill = await api.bill(outletId, tableId).catch(() => null);
+      if (bill?.session) {
+        setBillTable(tableId);
+      } else {
+        say("Bungkus direkod — jelaskan bila talian kembali");
+      }
+    }
+    setTarget(null);
+  };
+
+  /** Aim the pad at the takeaway row, creating it the first time. */
+  const aimAtTakeaway = async () => {
+    try {
+      const row = await api.takeaway(outletId);
+      setTarget({ ...row, kind: "takeaway" });
+    } catch {
+      // Only reachable with the line up: the row is created server-side. A
+      // bungkus order taken during an outage goes to a table like any other.
+      say("Bungkus perlu talian — guna meja buat sementara");
+    }
   };
 
   /**
@@ -858,7 +908,30 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
         </section>
 
         <section className="col">
-          <div className="col-head">Menu · pesanan kaunter · 86</div>
+          <div className="col-head">Ambil pesanan</div>
+
+          {/* Aimed first, filled second. */}
+          <div className="pad-target">
+            <button
+              className="pad-aim"
+              data-testid="pad-target"
+              aria-pressed={target !== null && target.kind !== "takeaway"}
+              onClick={() => setPickTable(true)}
+            >
+              {target && target.kind !== "takeaway"
+                ? target.label
+                : "Pilih meja"}
+            </button>
+            <button
+              className="pad-aim"
+              data-testid="pad-bungkus"
+              aria-pressed={target?.kind === "takeaway"}
+              onClick={() => void aimAtTakeaway()}
+            >
+              Bungkus
+            </button>
+          </div>
+
           <input
             className="menu-search"
             placeholder="Cari hidangan…"
@@ -898,9 +971,50 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
             })}
           </div>
           {cart.length > 0 && (
-            <div style={{ padding: "12px 16px", borderTop: "1px solid var(--pos-edge)" }}>
-              <button className="btn btn-accent" style={{ width: "100%" }} onClick={() => setPickTable(true)}>
-                Hantar {cart.length} item · <span className="num">{formatMYR(cartTotal)}</span>
+            <div className="pad-cart" data-testid="pad-cart">
+              {/* Read back to the customer before it goes to the kitchen. A
+                  cashier keying in a spoken order needs to see the words, not
+                  a count on a button — mishearing "kurang pedas" is how the
+                  wrong plate leaves the pass. */}
+              {cart.map((line, i) => (
+                <div className="bill-line" key={i}>
+                  <span className="ticket-qty num">{line.qty}×</span>
+                  <span className="grow">
+                    {line.nameMs}
+                    {(line.optionLabels.length > 0 || line.notes) && (
+                      <span className="ticket-note">
+                        {" "}
+                        {[...line.optionLabels, line.notes]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                    )}
+                  </span>
+                  <span className="num">{formatMYR(line.lineSen)}</span>
+                  <button
+                    className="mini"
+                    aria-label="Buang"
+                    onClick={() =>
+                      setCart((prev) => prev.filter((_, j) => j !== i))
+                    }
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button
+                className="btn btn-accent"
+                style={{ width: "100%", marginTop: "var(--s2)" }}
+                data-testid="pad-send"
+                disabled={target === null}
+                onClick={() =>
+                  target && void submitCart(target.id, target.label)
+                }
+              >
+                {target
+                  ? `Hantar ke ${target.label} · `
+                  : "Pilih meja dahulu · "}
+                <span className="num">{formatMYR(cartTotal)}</span>
               </button>
             </div>
           )}
@@ -914,6 +1028,7 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
           outletName={outlet.name}
           onPay={takePayment}
           onDiscount={giveDiscount}
+          onAddOrder={(t) => setTarget({ ...t, kind: "dining" })}
           tableId={billTable}
           onClose={() => setBillTable(null)}
           onSay={say}
@@ -935,16 +1050,26 @@ export function Till({ outlets, role }: { outlets: Outlet[]; role: Role }) {
         <div className="veil" onClick={() => setPickTable(false)}>
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <div className="sheet-head">
-              <span className="sheet-title">Hantar ke meja mana?</span>
+              <span className="sheet-title">Pesanan untuk meja mana?</span>
               <button className="sheet-x" onClick={() => setPickTable(false)}>×</button>
             </div>
             <div className="sheet-scroll">
               <div className="floor">
-                {tables.map((t) => (
-                  <button key={t.id} className="tbl" data-state={t.status} onClick={() => void submitCart(t.id)}>
-                    <span className="tbl-code">{t.label.replace("Meja ", "M")}</span>
-                  </button>
-                ))}
+                {tables
+                  .filter((t) => t.kind !== "takeaway")
+                  .map((t) => (
+                    <button
+                      key={t.id}
+                      className="tbl"
+                      data-state={t.status}
+                      onClick={() => {
+                        setTarget({ id: t.id, label: t.label, kind: "dining" });
+                        setPickTable(false);
+                      }}
+                    >
+                      <span className="tbl-code">{t.label.replace("Meja ", "M")}</span>
+                    </button>
+                  ))}
               </div>
             </div>
           </div>

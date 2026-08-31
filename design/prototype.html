@@ -376,7 +376,48 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .dot-ok { background: var(--pandan); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pandan) 25%, transparent); }
 .dot-warn { background: var(--tarik); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tarik) 25%, transparent); }
 
-.pos-body { flex: 1; display: grid; grid-template-columns: 1.35fr 1fr .85fr; min-height: 0; }
+/* The order pad is the widest column, not the narrowest: taking an order is
+   the counter's main job here, and 147 dishes need somewhere to be read. */
+.pos-body { flex: 1; display: grid; grid-template-columns: 1fr .9fr 1.3fr; min-height: 0; }
+.pos-search {
+  flex: none; margin: 0 14px 8px; padding: 8px 12px; border-radius: 8px;
+  border: 1px solid var(--pos-edge); background: var(--pos-raised);
+  font: inherit; font-size: 13px; color: var(--pos-text);
+}
+.pos-search::placeholder { color: var(--pos-muted); }
+.pad-target { display: flex; gap: 8px; padding: 0 14px 8px; }
+.pad-aim {
+  flex: 1; padding: 9px 10px; border-radius: 8px;
+  border: 1.5px dashed var(--pos-edge); background: transparent;
+  color: var(--pos-muted); font: inherit; font-weight: 700; font-size: 13px;
+  cursor: pointer;
+}
+/* Solid once aimed. An unaimed pad is a half-written order and should not
+   look like a finished one. */
+.pad-aim[aria-pressed="true"] {
+  border-style: solid; border-color: var(--enamel-lift);
+  background: var(--enamel); color: #fff;
+}
+.pad-row {
+  display: flex; align-items: center; gap: 8px; padding: 7px 14px;
+  border-bottom: 1px solid var(--pos-edge); font-size: 13px;
+}
+.pad-row .grow { flex: 1; text-align: left; }
+.pad-row button.pad-name {
+  flex: 1; text-align: left; background: none; border: 0; color: var(--pos-text);
+  font: inherit; font-size: 13px; cursor: pointer; padding: 0;
+}
+.pad-cart {
+  flex: none; max-height: 42%; overflow-y: auto; padding: 10px 14px;
+  border-top: 1px solid var(--pos-edge); background: var(--pos-panel);
+}
+.pad-line { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; }
+.pad-line .grow { flex: 1; }
+.pad-line small { color: var(--pos-muted); }
+.pad-drop {
+  background: none; border: 0; color: var(--pos-muted); cursor: pointer;
+  font-size: 15px; line-height: 1; padding: 0 4px;
+}
 .pos-col { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--pos-edge); }
 .pos-col:last-child { border-right: 0; }
 .pos-col-head {
@@ -759,6 +800,10 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
                   <span><i class="swatch" style="background:var(--pandan)"></i><span data-i18n="l_eat">Sedang makan</span></span>
                   <span><i class="swatch" style="background:var(--tarik)"></i><span data-i18n="l_bill">Minta bil</span></span>
                 </div>
+                <div class="pos-col-head" data-i18n="printed">Cetakan dapur</div>
+                <div class="printer-slot" id="printer">
+                  <p class="empty" data-i18n="no_print">Belum ada cetakan.</p>
+                </div>
               </div>
             </section>
 
@@ -767,13 +812,23 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
               <div class="pos-scroll" id="feed"></div>
             </section>
 
+            <!--
+              The order pad.
+
+              Customers here order to a person and the cashier keys it in, so
+              this is the counter's main job rather than a side panel — it is
+              the widest column for that reason. Aimed first, filled second:
+              that is the order a cashier hears it in.
+            -->
             <section class="pos-col">
-              <div class="pos-col-head" data-i18n="printed">Cetakan dapur</div>
-              <div class="pos-scroll">
-                <div class="printer-slot" id="printer">
-                  <p class="empty" data-i18n="no_print">Belum ada cetakan.</p>
-                </div>
+              <div class="pos-col-head" data-i18n="pad">Ambil pesanan</div>
+              <div class="pad-target">
+                <button class="pad-aim" id="padTable" data-i18n="pad_pick">Pilih meja</button>
+                <button class="pad-aim" id="padBungkus" data-i18n="pad_bungkus">Bungkus</button>
               </div>
+              <input class="pos-search" id="padSearch" data-i18n-ph="pad_search" placeholder="Cari hidangan…">
+              <div class="pos-scroll" id="padMenu"></div>
+              <div class="pad-cart" id="padCart"></div>
             </section>
 
           </div>
@@ -882,6 +937,10 @@ const I18N = {
     shift: "Syif petang", online: "Dalam talian",
     p_kitchen: "Pencetak dapur", p_counter: "Kertas kaunter rendah",
     floor: "Pelan meja", feed: "Pesanan masuk", printed: "Cetakan dapur",
+    pad: "Ambil pesanan", pad_pick: "Pilih meja", pad_bungkus: "Bungkus",
+    pad_search: "Cari hidangan…", pad_empty: "Belum ada apa-apa dalam pesanan ini.",
+    pad_send: "Hantar ke", pad_need: "Pilih meja dahulu",
+    t_counter: "Pesanan kaunter direkod",
     l_empty: "Kosong", l_order: "Memesan", l_eat: "Sedang makan", l_bill: "Minta bil",
     no_print: "Belum ada cetakan.",
     greet: "Selamat petang, Puan Suriani", vs: "berbanding Isnin lepas",
@@ -925,6 +984,10 @@ const I18N = {
     shift: "Evening shift", online: "Online",
     p_kitchen: "Kitchen printer", p_counter: "Counter paper low",
     floor: "Floor plan", feed: "Incoming orders", printed: "Kitchen prints",
+    pad: "Take an order", pad_pick: "Pick a table", pad_bungkus: "Takeaway",
+    pad_search: "Search dishes…", pad_empty: "Nothing on this order yet.",
+    pad_send: "Send to", pad_need: "Pick a table first",
+    t_counter: "Counter order recorded",
     l_empty: "Empty", l_order: "Ordering", l_eat: "Eating", l_bill: "Bill requested",
     no_print: "Nothing printed yet.",
     greet: "Good evening, Puan Suriani", vs: "vs last Monday",
@@ -1520,6 +1583,9 @@ function renderOwner() {
 /* ---------- shared ---------- */
 function applyI18n() {
   $$("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
+  // Placeholders are strings a customer reads too; the language toggle has to
+  // reach them or half the counter stays in the other language.
+  $$("[data-i18n-ph]").forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
 }
 
 let toastTimer;
@@ -1645,10 +1711,101 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove("is-up"), 2200);
 }
 
+/* ---- the counter's order pad ----
+   Aimed first, filled second — the order a cashier hears it in. */
+const pad = { target: null, query: "", lines: [] };
+
+function renderPad() {
+  const q = pad.query.trim().toLowerCase();
+  const shown = MENU.filter(m => !q || m.ms.toLowerCase().includes(q));
+
+  $("#padTable").setAttribute(
+    "aria-pressed", String(pad.target !== null && pad.target !== "BUNGKUS"));
+  $("#padTable").textContent =
+    pad.target && pad.target !== "BUNGKUS" ? pad.target : t("pad_pick");
+  $("#padBungkus").setAttribute("aria-pressed", String(pad.target === "BUNGKUS"));
+
+  $("#padMenu").innerHTML = CATS.map(c => {
+    const rows = shown.filter(m => m.cat === c.id);
+    if (!rows.length) return "";
+    return `<div class="zone-name" style="padding:6px 14px 2px">${lang === "ms" ? c.ms : c.en}</div>` +
+      rows.map(m => `<div class="pad-row">
+        <button class="pad-name" data-pad-add="${m.id}">${shortLabel(m[lang], c[lang])}</button>
+        <span class="num">${money(m.price)}</span>
+      </div>`).join("");
+  }).join("") || `<p class="empty">${t("cat_empty")}</p>`;
+
+  renderPadCart();
+}
+
+function renderPadCart() {
+  const mount = $("#padCart");
+  if (!pad.lines.length) { mount.innerHTML = ""; return; }
+
+  const total = pad.lines.reduce((sum, l) => sum + l.sen, 0);
+  const aimed = pad.target !== null;
+  mount.innerHTML = pad.lines.map((l, i) => `
+    <div class="pad-line">
+      <span class="num">${l.qty}×</span>
+      <span class="grow">${l.name}${l.extra ? ` <small>${l.extra}</small>` : ""}</span>
+      <span class="num">${money(l.sen)}</span>
+      <button class="pad-drop" data-pad-drop="${i}" aria-label="Buang">×</button>
+    </div>`).join("") +
+    `<button class="btn btn-accent" id="padSend" style="width:100%;margin-top:8px" ${aimed ? "" : "disabled"}>
+      ${aimed ? `${t("pad_send")} ${pad.target === "BUNGKUS" ? t("pad_bungkus") : pad.target}` : t("pad_need")}
+      · <span class="num">${money(total)}</span>
+    </button>`;
+}
+
+/* Aim: a table on the floor plan, or bungkus, which is not a table at all. */
+$("#padTable").addEventListener("click", () => {
+  // Cycle through the tables that are free or already eating — a prototype
+  // stands in for the app's picker sheet without needing one.
+  const codes = state.tables.map(x => x.c);
+  const at = pad.target && pad.target !== "BUNGKUS" ? codes.indexOf(pad.target) : -1;
+  pad.target = codes[(at + 1) % codes.length];
+  renderPad();
+});
+$("#padBungkus").addEventListener("click", () => {
+  pad.target = pad.target === "BUNGKUS" ? null : "BUNGKUS";
+  renderPad();
+});
+$("#padSearch").addEventListener("input", e => { pad.query = e.target.value; renderPad(); });
+
+$("#padMenu").addEventListener("click", e => {
+  const add = e.target.closest("[data-pad-add]");
+  if (!add) return;
+  const m = MENU.find(x => x.id === add.dataset.padAdd);
+  // The prototype adds one at the listed price; the app opens the same
+  // options sheet the customer's phone uses, so choices reach the docket.
+  // The full name on the pad, not the shortened one — the category heading
+  // is not beside it here, and "Susu" alone is two different dishes.
+  pad.lines.push({ id: m.id, name: m[lang], qty: 1, sen: m.price, extra: "" });
+  renderPadCart();
+});
+
+$("#padCart").addEventListener("click", e => {
+  const drop = e.target.closest("[data-pad-drop]");
+  if (drop) {
+    pad.lines.splice(Number(drop.dataset.padDrop), 1);
+    renderPadCart();
+    return;
+  }
+  if (!e.target.closest("#padSend") || pad.target === null) return;
+
+  const lines = pad.lines.map(l => ({ id: l.id, q: l.qty, choices: [], note: "" }));
+  // Bungkus has no table, so it goes to a row that is not one — and it is
+  // paid for before it is cooked, which the app opens the bill for.
+  sendOrder(pad.target === "BUNGKUS" ? "BKS" : pad.target, lines);
+  pad.lines = [];
+  renderPad();
+  toast(t("t_counter"));
+});
+
 function renderAll() {
   applyI18n();
   renderCats(); renderMenu(); renderEmptyCategory(); renderCart(); renderStatus();
-  renderFloor(); renderFeed(); renderOwner();
+  renderFloor(); renderFeed(); renderOwner(); renderPad();
 }
 
 /* ============================================================
@@ -1809,31 +1966,44 @@ document.addEventListener("click", e => {
     choices: lineChoices(l),
     note: l.note || "",
   }));
+  sendOrder("M05", lines);
+  state.cart = [];
+  state.view = "menu";
+  hideUndo();
+  renderMenu(); renderEmptyCategory(); renderCart(); renderStatus();
+  toast(t("t_sent"));
+});
+
+/**
+ * An order enters the system.
+ *
+ * One implementation for the phone and for the counter, because the counter
+ * order is not a special case — it lands in the same place, prints the same
+ * docket and shows on the same feed. Two implementations here is exactly how
+ * this prototype drifted from the app three times already.
+ */
+function sendOrder(tableCode, lines) {
   const now = new Date();
   const order = {
     id: ++state.seq,
-    table: "M05",
+    table: tableCode,
     time: String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0"),
     lines,
     status: "printed",
     fresh: true
   };
   state.orders.push(order);
-  state.cart = [];
-  state.view = "menu";
-  hideUndo();
 
-  const tb = state.tables.find(x => x.c === "M05");
-  tb.s = "ordering"; tb.m = "…";
+  const tb = state.tables.find(x => x.c === tableCode);
+  if (tb) { tb.s = "ordering"; tb.m = "…"; }
 
-  renderMenu(); renderEmptyCategory(); renderCart(); renderStatus(); renderFloor(); renderFeed();
+  renderFloor(); renderFeed();
   renderReceipt(order);
 
-  const cell = document.querySelector('[data-code="M05"]');
+  const cell = document.querySelector(`[data-code="${tableCode}"]`);
   if (cell) { cell.classList.add("is-new"); setTimeout(() => cell.classList.remove("is-new"), 800); }
-
-  toast(t("t_sent"));
-});
+  return order;
+}
 
 /* language */
 function setLang(next) {

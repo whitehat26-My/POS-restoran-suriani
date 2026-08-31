@@ -19,6 +19,8 @@ export interface FloorTable {
   sortOrder: number;
   /** empty | ordering | eating | bill_requested */
   status: string;
+  /** dining | takeaway — the takeaway row is not on the floor plan. */
+  kind?: string;
   session: {
     id: string;
     openedAt: number;

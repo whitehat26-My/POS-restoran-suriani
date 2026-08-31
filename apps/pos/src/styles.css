@@ -70,7 +70,9 @@ button.pill { cursor: pointer; }
 .dot-warn { background: var(--tarik); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tarik) 25%, transparent); animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: .4; } }
 
-.body { flex: 1; display: grid; grid-template-columns: 1.35fr 1fr .95fr; min-height: 0; }
+/* The order pad is the widest column, not the narrowest: taking an order is
+   now the counter's main job, and 147 dishes need somewhere to be read. */
+.body { flex: 1; display: grid; grid-template-columns: 1fr .9fr 1.3fr; min-height: 0; }
 .col { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--pos-edge); }
 .col:last-child { border-right: 0; }
 .col-head {
@@ -359,3 +361,26 @@ button.pill { cursor: pointer; }
 
 /* A drawer that does not balance should not look like one that does. */
 .bill-total.is-variance { color: var(--tarik); }
+
+/* ---- the order pad ----
+   Customers order to a person here and the cashier keys it in, so this column
+   is the till's main job rather than a side panel. Aimed first, filled
+   second — the order a cashier hears it in. */
+.pad-target { display: flex; gap: var(--s2); padding: 0 var(--s4) var(--s2); }
+.pad-aim {
+  flex: 1; padding: 10px 12px; border-radius: var(--r-md);
+  border: 1.5px dashed var(--pos-edge); background: transparent;
+  color: var(--pos-muted); font: inherit; font-weight: 700; font-size: var(--t-sm);
+}
+/* Solid once aimed: an unaimed pad is a half-written order, and it should not
+   look like a finished one. */
+.pad-aim[aria-pressed="true"] {
+  border-style: solid; border-color: var(--enamel-lift);
+  background: var(--enamel); color: #fff;
+}
+.pad-cart {
+  flex: none; max-height: 44%; overflow-y: auto;
+  padding: var(--s3) var(--s4); border-top: 1px solid var(--pos-edge);
+  background: var(--pos-panel);
+}
+.pad-cart .bill-line .mini { flex: none; padding: 2px 8px; line-height: 1.2; }

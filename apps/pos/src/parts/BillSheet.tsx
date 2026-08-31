@@ -21,6 +21,7 @@ export function BillSheet({
   onSay,
   onPay,
   onDiscount,
+  onAddOrder,
 }: {
   outletId: string;
   outletName: string;
@@ -41,6 +42,8 @@ export function BillSheet({
     amountSen: Sen;
     reason: string;
   }) => Promise<void>;
+  /** Aim the order pad at this table and get out of the way. */
+  onAddOrder: (table: { id: string; label: string }) => void;
 }) {
   const [bill, setBill] = useState<Bill | null>(null);
   const [closing, setClosing] = useState(false);
@@ -230,6 +233,19 @@ export function BillSheet({
         {bill?.session && (
           <>
             <div className="sheet-foot">
+              {/* The commonest thing a cashier does at an occupied table is
+                  add to it — someone wants another teh. One tap aims the pad
+                  and closes the sheet. */}
+              <button
+                className="btn btn-quiet"
+                data-testid="add-order"
+                onClick={() => {
+                  onAddOrder({ id: bill.table.id, label: bill.table.label });
+                  onClose();
+                }}
+              >
+                Tambah pesanan
+              </button>
               <button
                 className="btn btn-quiet"
                 disabled={printing}

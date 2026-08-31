@@ -66,6 +66,16 @@ export interface OfflineTill {
   perform(body: OpBody): Promise<Op>;
   /** Drain now — the line came back, or the cashier tapped retry. */
   nudge(): void;
+  /**
+   * Drain, and wait for it to settle.
+   *
+   * Needed where the very next thing depends on the server having seen the
+   * op — a bungkus order is paid for the moment it is keyed in, and the bill
+   * cannot be opened until the session it hangs off exists. Everywhere else
+   * `nudge` is right: making the cashier wait for a round trip is the thing
+   * the outbox exists to avoid.
+   */
+  flush(): Promise<void>;
   pending(): Promise<number>;
   /**
    * The client ULIDs still waiting to sync.
@@ -124,6 +134,9 @@ export function openOfflineTill(
       return op;
     },
     nudge: () => syncer.nudge(),
+    flush: async () => {
+      await syncer.drain();
+    },
     pending: () => outbox.size(),
     queuedUlids: async () => (await outbox.all()).map((q) => q.op.clientUlid),
     durable,

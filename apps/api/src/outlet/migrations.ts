@@ -314,6 +314,29 @@ export const MIGRATIONS: Migration[] = [
       `ALTER TABLE settings ADD COLUMN receipt_seq INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    // Somewhere to put a takeaway order.
+    //
+    // `placeOrder` has always needed a table, because every bill, docket,
+    // receipt and payment hangs off a session and every session hangs off a
+    // table. That is right for people sitting down and useless for somebody
+    // buying nasi bungkus on the way to work — the till would ask which table
+    // to send it to, and there is no honest answer.
+    //
+    // Rather than make table_id nullable — which would mean auditing every
+    // query that assumes a table and every screen that shows one — a
+    // restaurant gets one row that is not a table anybody sits at. All the
+    // machinery above it is reused exactly as it stands.
+    //
+    // `kind` is what keeps it from leaking into places it does not belong:
+    // the printed QR cards are for tables people sit at, and a card for
+    // "Bungkus" would be nonsense on an acrylic stand.
+    version: 8,
+    statements: [
+      `ALTER TABLE tables ADD COLUMN kind TEXT NOT NULL DEFAULT 'dining'`,
+      `CREATE INDEX idx_tables_kind ON tables (kind)`,
+    ],
+  },
 ];
 
 /** Highest version this build knows how to migrate to. */

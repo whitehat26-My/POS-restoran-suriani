@@ -400,6 +400,36 @@ describe("printable QR cards", () => {
     );
   });
 
+  it("leaves the takeaway row off the printed cards", async () => {
+    const a = await createTenant("Suriani Cards");
+    const stub = env.OUTLET.get(env.OUTLET.idFromName(a.doId));
+    const row = await stub.takeawayTable();
+
+    const html = await (
+      await SELF.fetch(
+        `https://api.test/api/outlets/${a.outletId}/tables/cards`,
+        { headers: auth(a) },
+      )
+    ).text();
+
+    // A QR stand on the counter reading "Bungkus" would be nonsense, and
+    // scanning it would open somebody else's takeaway order.
+    expect(html).not.toContain("Bungkus");
+    expect(html).not.toContain(row.id);
+  });
+
+  it("hands back the same takeaway row every time", async () => {
+    const a = await createTenant("Suriani OneRow");
+    const stub = env.OUTLET.get(env.OUTLET.idFromName(a.doId));
+    const first = await stub.takeawayTable();
+    const again = await stub.takeawayTable();
+    // Created on demand, so outlets seeded before takeaway existed grow one
+    // on the first bungkus — but only ever one.
+    expect(again.id).toBe(first.id);
+    const tables = await stub.listTables();
+    expect(tables.filter((t) => t.kind === "takeaway")).toHaveLength(1);
+  });
+
   it("is not something a cashier can pull up", async () => {
     const a = await createTenant("Suriani");
     const res = await SELF.fetch(

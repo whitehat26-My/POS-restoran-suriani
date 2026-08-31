@@ -69,6 +69,8 @@ export interface SeedTable {
   id: string;
   label: string;
   qrToken: string;
+  /** "takeaway" for the one row a bungkus order hangs off. */
+  kind?: string;
 }
 
 export interface SeedStation {
@@ -442,6 +444,7 @@ export class OutletDO extends DurableObject<Env> {
         capacity: t.capacity,
         sortOrder: t.sortOrder,
         status: t.status,
+        kind: t.kind,
         session: session
           ? {
               id: session.id,
@@ -746,7 +749,15 @@ export class OutletDO extends DurableObject<Env> {
     for (const t of input.tables) {
       await this.db
         .insert(schema.tables)
-        .values({ id: t.id, label: t.label, qrToken: t.qrToken })
+        .values({
+          id: t.id,
+          label: t.label,
+          qrToken: t.qrToken,
+          kind: t.kind ?? "dining",
+          // Last on the floor plan: it is not a table, and it should not sit
+          // in the middle of the ones that are.
+          sortOrder: t.kind === "takeaway" ? 9_000 : 0,
+        })
         .onConflictDoNothing();
     }
 
@@ -798,6 +809,38 @@ export class OutletDO extends DurableObject<Env> {
         modifierGroups: groupsByItem.get(i.id) ?? [],
       })),
     };
+  }
+
+  /**
+   * Somewhere to hang a bungkus order.
+   *
+   * Created on demand rather than at onboarding, so the outlets seeded before
+   * takeaway existed grow one the first time somebody sells nasi bungkus,
+   * with no migration that has to reach into every restaurant's data.
+   */
+  async takeawayTable(): Promise<{ id: string; label: string }> {
+    const existing = (
+      await this.db
+        .select()
+        .from(schema.tables)
+        .where(eq(schema.tables.kind, "takeaway"))
+        .limit(1)
+    )[0];
+    if (existing) return { id: existing.id, label: existing.label };
+
+    const row = {
+      id: id("tbl"),
+      label: "Bungkus",
+      // It still gets a real secret. Nothing points a QR at it today, and a
+      // predictable token on a row that can take orders is not a shortcut
+      // worth having.
+      qrToken: qrToken(),
+      kind: "takeaway",
+      sortOrder: 9_000,
+    };
+    await this.db.insert(schema.tables).values(row);
+    await this.audit("table.takeaway_created", JSON.stringify({ id: row.id }));
+    return { id: row.id, label: row.label };
   }
 
   /** Active tables by default; archived rows are history, not floor plan. */
